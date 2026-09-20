@@ -1,0 +1,8 @@
+{
+  // 让中英对照文档（data/interleave/*.md）的预览更好读：
+  // 英文原文被压小、变灰，鼠标悬停才变深 —— 读中文时几乎不干扰视线。
+  // 用相对工作区根的路径，所以在 Windows / macOS 上都不用改。
+  "markdown.styles": [
+    "data/interleave/reader.css"
+  ]
+}

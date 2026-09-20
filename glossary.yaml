@@ -1,0 +1,202 @@
+# 术语表 —— 本项目的核心资产（跨文献复利积累）
+#
+# 字段说明
+#   term     英文原文术语（命中检测按词边界，允许复数/连字符变体）
+#   zh       你希望的中文译法
+#   mode     hard_replace = 译后字符串替换（改它 0 token、立刻生效、不触发重译）
+#            prompt_hint  = 必须写进 prompt（改它只会重译命中的段落）
+#   note     给 LLM 的说明（仅 prompt_hint 有意义）
+#   aliases  其它需要被替换掉的译法（仅 hard_replace 有意义）
+#   pattern  可选，自定义正则；默认规则容易误伤缩写时用它
+#   status   suggested（我给的初稿，待你审核）| approved | rejected
+#   scope    作用域，解决「同一个词/缩写在不同文章意思不同」：
+#              global          个人偏好，永远这么译（默认）
+#              field:<学科>   只在某学科域生效，如 field:neuroscience
+#              doc:<文档ID>   只在这一篇生效（写进 glossary-d/<文档ID>.yaml）
+#            解析时**就近优先**：doc > field > global。同级出现两种译法会**报错中止**，
+#            不会静默挑一个。经验：MSN / MTL / ACC / SIF / TNT 这类大写缩写是
+#            同名异义高发区，**只应在 field 或 doc 级定义，不要写进 global**。
+#   full_en  缩写的英文全称（**缩写条目建议一定要填**）
+#            填了它，工具才能把「本文给的全称」与「你表里存的含义」做**精确比对**，
+#            从而自动发现同名异义；不填就只能靠中文译法反推，必然误报。
+#
+# 下面这 20 条是从你这篇综述（s41583-025-00929-y）正文里挑的高频核心术语，
+# 译法都是**建议值，待你审核** —— 你的习惯优先于任何"标准译法"。
+
+terms:
+  # ---------- 作者用来命名自己框架的关键概念（译法最需要统一） ----------
+  - term: retrieval stopping
+    zh: 检索停止
+    mode: prompt_hint
+    note: 本文的核心自造概念，指"主动停止记忆提取"。不要译成"提取停止"或"回忆抑制"，全篇必须统一
+  - term: thought suppression
+    zh: 思维压抑
+    mode: prompt_hint
+    note: 与 retrieval stopping 区分开：suppression 指"压抑"这一行为，retrieval stopping 指其机制
+  - term: transdiagnostic
+    zh: 跨诊断
+    mode: prompt_hint
+    note: 含义是"跨越多种疾病类别都存在"，而非某种疾病专属。首次出现时补一句解释
+  - term: intrusive thinking
+    zh: 侵入性思维
+    mode: hard_replace
+    aliases: ["闯入性思维", "侵入性思考", "侵扰性思维"]
+  - term: mnemonic capture
+    zh: 记忆捕获
+    mode: prompt_hint
+    note: 指皮层重激活后"劫持"海马控制的过程，不要直译成"记忆的捕获"
+
+  # ---------- 机制 / 脑区 ----------
+  - term: inhibitory control
+    zh: 抑制控制
+    mode: hard_replace
+    aliases: ["抑制性控制", "抑制控制力"]
+  - term: hippocampal disinhibition
+    zh: 海马去抑制
+    mode: hard_replace
+    aliases: ["海马抑制解除", "海马脱抑制"]
+  - term: GABAergic inhibition
+    zh: GABA 能抑制
+    mode: hard_replace
+    aliases: ["GABA 能抑制", "GABA能抑制", "γ-氨基丁酸能抑制"]
+  - term: DLPFC
+    zh: 背外侧前额叶
+    mode: hard_replace
+    aliases: ["背侧前额叶", "背外侧前额皮质"]
+    full_en: dorsolateral prefrontal cortex
+    scope: field:neuroscience
+  - term: VLPFC
+    zh: 腹外侧前额叶
+    mode: hard_replace
+    aliases: ["腹侧前额叶", "腹外侧前额皮质"]
+    full_en: ventrolateral prefrontal cortex
+    scope: field:neuroscience
+  - term: MTL
+    zh: 内侧颞叶
+    mode: hard_replace
+    aliases: ["内侧颞叶区", "中颞叶"]
+    full_en: medial temporal lobe
+    # ⚠️ MTL 在别的领域可能是別的缩写（如 membrane traffic... ），
+    #    所以限定在神经科学域内生效；非本领域的文章不会误用这条。
+    scope: field:neuroscience
+  - term: fronto-temporal pathway
+    zh: 额颞通路
+    mode: hard_replace
+    aliases: ["额-颞通路", "额颞环路", "前额-颞叶通路"]
+  - term: fear extinction
+    zh: 恐惧消退
+    mode: hard_replace
+    aliases: ["恐惧消除", "恐惧灭绝"]
+  - term: negative BOLD response
+    zh: 负性 BOLD 反应
+    mode: hard_replace
+    aliases: ["负 BOLD 反应", "BOLD 负反应"]
+  - term: amnesic shadow
+    zh: 遗忘阴影
+    mode: prompt_hint
+    note: 指抑制期间形成的短暂遗忘窗口，是个形象化术语，保留"阴影"意象
+
+  # ---------- 任务 / 指标 ----------
+  - term: think/no-think
+    zh: think/no-think 任务
+    mode: hard_replace
+    aliases: ["思考/不思考", "想/不想任务", "思考-不思考任务"]
+  - term: SIF
+    zh: SIF（压抑诱发的遗忘）
+    mode: prompt_hint
+    note: 缩写首次出现时给全称"suppression-induced forgetting"及中文，之后可直接用 SIF
+    pattern: "(?<![A-Za-z])SIF(?![A-Za-z])"
+    full_en: suppression-induced forgetting
+    scope: doc:s41583-025-00929-y
+  - term: SSRT
+    zh: 停止信号反应时
+    mode: hard_replace
+    aliases: ["停止信号反应时间", "SSRT 反应时"]
+    full_en: stop signal reaction time
+    scope: field:neuroscience
+
+  # ---------- 临床 ----------
+  - term: PTSD
+    zh: 创伤后应激障碍
+    mode: hard_replace
+    aliases: ["创伤后应激综合症", "PTSD 症"]
+    full_en: post-traumatic stress disorder
+    scope: global
+  - term: perseverative thinking
+    zh: 持续性思维
+    mode: hard_replace
+    aliases: ["固执性思维", "持续思考"]
+
+  # ---------- 由 tools/check_terms.py 从本文正文自动发现后补入 ----------
+  # 说明：这些缩写在本文出现频繁（MSN x11、BOLD x10、NSW x5…），
+  # 但初版术语表漏了。**首次跑 check_terms 就能捞出来**，这正是它的价值。
+  - term: MSN
+    zh: 中型棘状神经元
+    mode: hard_replace
+    aliases: ["中等棘状神经元", "中棘神经元"]
+    full_en: medium spiny neurons
+    scope: field:neuroscience
+    note: |
+      神经科学域内的**默认**含义。注意本文指的是 medial septal nucleus（内侧隔核），
+      已在 glossary-d/s41583-025-00929-y.yaml 里用 doc 级覆盖 —— 这就是同名异义的标准解法。
+  - term: BOLD
+    zh: BOLD
+    mode: hard_replace
+    aliases: ["BOLD 信号", "血氧水平依赖信号"]
+    full_en: blood oxygenation level-dependent
+    scope: global
+    note: 通常保留 BOLD 不译；首次出现写"血氧水平依赖（BOLD）"
+  - term: OCD
+    zh: 强迫症
+    mode: hard_replace
+    aliases: ["强迫性障碍", "强迫症障碍", "强迫性精神障碍"]
+    full_en: obsessive compulsive disorder
+    scope: global
+  - term: DMN
+    zh: 默认模式网络
+    mode: hard_replace
+    aliases: ["默认网络", "默认模式网路", "静息态网络"]
+    full_en: default mode network
+    scope: field:neuroscience
+  - term: LOC
+    zh: 外侧枕叶复合体
+    mode: hard_replace
+    aliases: ["外侧枕区复合体", "侧枕复合体"]
+    full_en: lateral occipital complex
+    scope: doc:s41583-025-00929-y
+  - term: NSW
+    zh: 负性慢波
+    mode: hard_replace
+    aliases: ["负慢波", "阴性慢波", "负性慢电位"]
+    full_en: negative slow wave
+    scope: doc:s41583-025-00929-y
+  - term: EM
+    zh: 情景记忆
+    mode: hard_replace
+    aliases: ["事件记忆", "情节记忆"]
+    full_en: episodic memory
+    scope: doc:s41583-025-00929-y
+    note: |
+      EM 在别的领域常指 electron microscopy（电镜）等。所以只在本文生效，
+      不写进 global —— 缩写越短，越不该放进全局表。
+
+  # ---------- 通用医学缩写（无歧义，可跨文献复用，所以放 global） ----------
+  # 由 s41575-024-00932-1 的审计发现后补入
+  - term: IBD
+    zh: 炎症性肠病
+    mode: hard_replace
+    aliases: ["炎性肠病", "炎症性肠道疾病", "炎症性肠疾病"]
+    full_en: inflammatory bowel disease
+    scope: global
+  - term: IBS
+    zh: 肠易激综合征
+    mode: hard_replace
+    aliases: ["肠易激综合症", "肠激惹综合征", "过敏性结肠综合征"]
+    full_en: irritable bowel syndrome
+    scope: global
+  - term: FSFI
+    zh: 女性性功能指数
+    mode: hard_replace
+    aliases: ["女性性功能量表", "女性性功能指数问卷"]
+    full_en: female sexual function index
+    scope: global

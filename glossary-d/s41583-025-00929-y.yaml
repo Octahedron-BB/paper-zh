@@ -1,0 +1,18 @@
+# 单篇覆盖表：只对 s41583-025-00929-y 这一篇生效
+#
+# 用途：解决「同一个缩写/词，在这篇文章里是另一个意思」。
+# 原则：**主表（glossary.yaml）保持干净、可跨文献复用**；
+#       某篇的特殊含义只写在这里，用 scope: doc:<文档ID> 声明。
+# 解析优先级：doc > field > global（就近覆盖）。
+
+terms:
+  # ⚠️ 真实案例：MSN 在神经科学里的默认含义是 medium spiny neurons（中型棘状神经元，
+  #    基底节相关文献里几乎都是这个意思）。但**本文**指的是
+  #    medial septal nucleus（内侧隔核，位于基底前脑）。
+  #    如果不做本文覆盖，全篇 11 处 MSN 都会译错 —— 而且译文读起来完全通顺，很难发现。
+  - term: MSN
+    zh: 内侧隔核
+    mode: hard_replace
+    aliases: ["中隔核", "内侧中隔核", "内侧隔区"]
+    full_en: medial septal nucleus
+    scope: doc:s41583-025-00929-y

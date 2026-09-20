@@ -1,0 +1,26 @@
+{
+ "s41583-025-00929-y": {
+  "sections": 19,
+  "sections_min": 17,
+  "segments": 62,
+  "words": 10087
+ },
+ "s41575-024-00932-1": {
+  "sections": 44,
+  "sections_min": 42,
+  "segments": 109,
+  "words": 11113
+ },
+ "s41574-022-00638-x": {
+  "sections": 16,
+  "sections_min": 14,
+  "segments": 37,
+  "words": 5452
+ },
+ "vieta2018": {
+  "sections": 25,
+  "sections_min": 23,
+  "segments": 53,
+  "words": 7267
+ }
+}

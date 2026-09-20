@@ -1,0 +1,53 @@
+# 单篇覆盖表：只对 s41574-022-00638-x 生效
+# （Nature Reviews Endocrinology —— 间歇性禁食综述）
+#
+# 术语来源：`tools/check_terms.py --doc-id s41574-022-00638-x` 的审计结果
+#   ADF x33 alternate day fasting   <- 审计报出「术语表里没有」
+#   另有人工补充的核心概念词（该文正题就是这几类禁食方案）
+#
+# ⚠️ ADF 只在本篇用 doc 作用域：三字母缩写在别的领域很可能有别的意思。
+#    若你以后常读营养学文献，可以把它提升为 field:nutrition。
+
+terms:
+  - term: ADF
+    zh: 隔日禁食
+    mode: hard_replace
+    aliases: ["交替日禁食", "隔日禁食法", "交替禁食"]
+    full_en: alternate day fasting
+    scope: doc:s41574-022-00638-x
+    pattern: "(?<![A-Za-z])ADF(?![A-Za-z])"
+
+  - term: TRE
+    zh: 限时进食
+    mode: hard_replace
+    aliases: ["时限性进食", "限时饮食", "时间限制性进食"]
+    full_en: time-restricted eating
+    scope: doc:s41574-022-00638-x
+    pattern: "(?<![A-Za-z])TRE(?![A-Za-z])"
+
+  - term: intermittent fasting
+    zh: 间歇性禁食
+    mode: hard_replace
+    aliases: ["间歇禁食", "间歇性断食", "间歇断食"]
+    scope: doc:s41574-022-00638-x
+
+  - term: time-restricted eating
+    zh: 限时进食
+    mode: hard_replace
+    aliases: ["时限性进食", "限时饮食"]
+    scope: doc:s41574-022-00638-x
+
+  - term: 5:2 diet
+    zh: 5:2 饮食
+    mode: hard_replace
+    aliases: ["5：2 饮食", "5比2饮食", "5:2 禁食"]
+    scope: doc:s41574-022-00638-x
+
+  - term: caloric restriction
+    zh: 热量限制
+    mode: hard_replace
+    aliases: ["卡路里限制", "能量限制"]
+  - term: alternate day fasting
+    zh: 隔日禁食
+    mode: hard_replace
+    aliases: ["交替日禁食"]

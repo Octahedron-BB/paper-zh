@@ -1,0 +1,30 @@
+# 单篇覆盖表：只对 s41575-024-00932-1 这一篇生效
+# （Nature Reviews Gastroenterology & Hepatology）
+#
+# 生成方式：先跑 `tools/check_terms.py --doc-id s41575-024-00932-1`，
+# 把审计报出来的「术语表里没有、但本文高频出现」的缩写补进来。
+#
+# ⚠️ 这一步必须在翻译**之前**做。本文实测教训：
+#    第一次试译时术语表里没有 RAI，LLM 自己猜，把 RAI 展开了
+#    「放射性碘治疗」—— 而本文 RAI 是 receptive anal intercourse。
+#    它出现 254 次，错误很难靠耳朵听出来。
+
+terms:
+  - term: RAI
+    zh: 接受性肛交
+    mode: prompt_hint
+    full_en: receptive anal intercourse
+    scope: doc:s41575-024-00932-1
+    pattern: "(?<![A-Za-z])RAI(?![A-Za-z])"
+    note: |
+      ⚠️ 同名异义高发。本文中 RAI **只**指 receptive anal intercourse（接受性肛交），
+      **不是** radioactive iodine（放射性碘治疗），也不是 radiofrequency ablation（射频消融）。
+      首次出现写「接受性肛交（RAI）」，之后可直接用 RAI，全篇保持一致。
+
+  - term: LAR
+    zh: 低位前切除术
+    mode: hard_replace
+    aliases: ["低位前切除", "低位前位切除术"]
+    full_en: low anterior resection
+    scope: doc:s41575-024-00932-1
+    note: 结直肠外科术式；缩写本身在别的语境也可能有别的意思，故限定在本篇。

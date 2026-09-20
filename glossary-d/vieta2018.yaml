@@ -1,0 +1,56 @@
+# 单篇覆盖表：只对 vieta2018 生效
+# （2018 年那篇双相障碍 Primer）
+#
+# 术语来源：`tools/check_terms.py --doc-id vieta2018` 的审计结果
+#   GWAS x7  genome-wide association studies
+#   IDS  x2  Inventory of Depressive Symptomatology
+#   另有人工补充的标准精神科缩写（无歧义，已直接放进主表 global 的不重复）
+#
+# ⚠️ GWAS 是标准术语，本可放 global；这里保守地放 doc，等你确认后可以上移。
+
+terms:
+  - term: GWAS
+    zh: 全基因组关联研究
+    mode: hard_replace
+    aliases: ["全基因组关联分析", "全基因组关联研究（GWAS）"]
+    full_en: genome-wide association studies
+    scope: doc:vieta2018
+    pattern: "(?<![A-Za-z])GWAS(?![A-Za-z])"
+
+  - term: IDS
+    zh: 抑郁症状学量表
+    mode: hard_replace
+    aliases: ["抑郁症状量表", "IDS 量表"]
+    full_en: Inventory of Depressive Symptomatology
+    scope: doc:vieta2018
+    pattern: "(?<![A-Za-z])IDS(?![A-Za-z])"
+
+  - term: bipolar disorder
+    zh: 双相障碍
+    mode: hard_replace
+    aliases: ["双相情感障碍", "双相情感性障碍", "躁郁症"]
+    scope: doc:vieta2018
+  - term: major depressive disorder
+    zh: 重性抑郁障碍
+    mode: hard_replace
+    aliases: ["重度抑郁症", "重性抑郁症", "严重抑郁障碍"]
+  - term: MDD
+    zh: 重性抑郁障碍
+    mode: hard_replace
+    aliases: ["重度抑郁症", "重性抑郁症"]
+    full_en: major depressive disorder
+    scope: global
+  - term: ECT
+    zh: 电休克治疗
+    mode: hard_replace
+    aliases: ["电抽搐治疗", "电惊厥治疗", "电痉挛治疗"]
+    full_en: electroconvulsive therapy
+    scope: global
+  - term: hypomania
+    zh: 轻躁狂
+    mode: hard_replace
+    aliases: ["轻度躁狂", "亚躁狂"]
+  - term: rapid cycling
+    zh: 快速循环
+    mode: hard_replace
+    aliases: ["快速循环型", "快速循环发作"]

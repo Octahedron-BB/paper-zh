@@ -1,0 +1,26 @@
+# 密钥与本地配置
+.env
+
+# 输入：原文 PDF（版权原因，不提交）
+papers/*.pdf
+
+# 产物：全部由原文派生，一律不提交。
+# ⚠️ 尤其 data/translation/ 与 data/script/ 是**全文译文与讲稿**，
+#    推到公开仓库属于「向公众提供」，版权风险最高。
+data/
+
+# 私人开发记录
+archive/
+.brainstorm-notes/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# ---- 仓库里保留的（工具本身，可分享、无版权风险）----
+#   src/ tools/ tests/
+#   glossary.yaml  glossary-d/    术语表：本项目的核心资产
+#   README.md  requirements.txt  .env.example  .vscode/settings.json
+
+
