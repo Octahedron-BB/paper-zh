@@ -1,26 +1,82 @@
-# 密钥与本地配置
+# ==============================================================================
+# Git 忽略规则 (.gitignore)
+# ==============================================================================
+
+# 1. 密钥与本地配置
 .env
+.env.local
+.env.*.local
+.DS_Store
+Thumbs.db
+desktop.ini
 
-# 输入：原文 PDF（版权原因，不提交）
-papers/*.pdf
+# 2. 编辑器与 IDE 本地杂项
+.idea/
+*.sublime-project
+*.sublime-workspace
+.vscode/*.log
 
-# 产物：全部由原文派生，一律不提交。
-# ⚠️ 尤其 data/translation/ 与 data/script/ 是**全文译文与讲稿**，
-#    推到公开仓库属于「向公众提供」，版权风险最高。
-data/
-
-# 私人开发记录
-archive/
-# .brainstorm-notes/
-
-# Python
+# 3. Python 运行时与缓存
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 .venv/
+env/
+venv/
+ENV/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
-# ---- 仓库里保留的（工具本身，可分享、无版权风险）----
-#   src/ tools/ tests/
-#   glossary.yaml  glossary-d/    术语表：本项目的核心资产
-#   README.md  requirements.txt  .env.example  .vscode/settings.json
+# 4. 私人开发记录与临时脚本
+archive/
+scratch/
+tmp/
+temp/
+*.log
+*.tmp
 
+# 5. 输入文件：原文 PDF（版权原因，严禁提交）
+papers/*.pdf
+papers/*.PDF
+!papers/.gitkeep
 
+# 6. 产物数据：全部由原文派生，一律不提交到公共仓库
+# ⚠️ 尤其是 data/ 下的全文译文、讲稿、音频与伴读 HTML，属于高版权敏感资产。
+data/
+!data/.gitkeep
+
+# 7. 临时媒体文件
+*.mp3
+*.wav
+*.m4a
+*.lrc
+*.vtt
+
+# ==============================================================================
+# 仓库保留的核心资产清单（无版权风险，可安全分享与复用）：
+#   - src/ tools/ tests/ devtools/
+#   - glossary.yaml       主术语表（跨文献复用的核心资产）
+#   - glossary-d/         单篇术语表
+#   - polyphone.yaml      多音字与发音清洗词典
+#   - README.md  requirements.txt  .env.example  .vscode/settings.json
+# ==============================================================================

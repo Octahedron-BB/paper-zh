@@ -309,6 +309,31 @@ def test_duplicate_collapse_does_not_touch_legit_reduplication():
     assert normalize_zh("the the task") == "the the task"
 
 
+def test_polyphone_rules_loading_and_application():
+    from src.polyphone import load_polyphone_rules, apply_polyphone_rules
+    from tools.build_audio import normalize_script_for_tts
+
+    rules = load_polyphone_rules()
+    assert len(rules) >= 10, "必须成功加载全局 polyphone.yaml 规则"
+
+    # 测试专有词替换（长词优先匹配）
+    text = "患者肠道黏膜损伤伴随血栓栓塞，经过校正后属于重度症状。"
+    tts_text = apply_polyphone_rules(text, rules)
+    assert "粘膜" in tts_text
+    assert "血栓栓色" in tts_text
+    assert "矫正" in tts_text
+    assert "众度" in tts_text
+
+    # 测试英文缩写 + 多音字一体化预处理
+    mixed_text = "在RAI治疗中，患者出现恶心与咽部不适，以及DGBI症状。"
+    norm_out = normalize_script_for_tts(mixed_text, poly_rules=rules)
+    assert "R-A-I" in norm_out
+    assert "D-G-B-I" in norm_out
+    assert "额心" in norm_out
+    assert "烟部" in norm_out
+
+
+
 def _run() -> int:
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

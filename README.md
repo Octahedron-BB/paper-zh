@@ -1,346 +1,259 @@
-# 文献 → 中文分层伴读
+# 文献 → 中文分层伴读与播客生成系统 (paper-zh)
 
-把 Nature Reviews 之类的高密度英文综述 PDF，变成两样东西：
+将 Nature Reviews 等高密度英文学术综述 PDF，一键自动化转化为端到端的高质量中文分层伴读与播客有声系统：
 
-1. **轨A · 忠实全译**（`data/translation/`）—— 用来**看**，逐段对照原文
-2. **轨B · 中文口语讲稿**（`data/script/`）—— 用来**听**，为后续配音准备
-
-外加一份**中英交错对照文档**（`data/interleave/`），是做人工抽查时最顺手的形态。
-
-> 仅个人自用。**不要**公开分发，也不要把译文/音频发到公开平台
-> （原文多为订阅刊，条款禁止再分发）。
+1. **自包含 Web Reader 双向伴读网页**（`data/reader/<doc_id>.html`）—— **单文件零依赖、内嵌音频、逐句变色高亮、点句即播、移动端/PC 全自适应**
+2. **高质量播客朗读音频**（`data/audio/`）—— **多音字发音清洗、毫秒级时间戳、LRC/VTT 字幕**
+3. **轨A · 忠实全译**（`data/translation/`）—— 学术全译，逐段对照原文
+4. **轨B · 口语讲稿**（`data/script/`）—— 听觉友好、无悬空图表、多音字规避的口语播客稿
+5. **中英交错对照**（`data/interleave/`）—— VS Code 侧边栏沉浸式中英对照
 
 ---
 
-## 一、快速开始
+## 目录
 
-> 文档里的命令都是**跨平台**的：路径一律用 `/`，命令用 `python`。
-> Windows（PowerShell）和 macOS（zsh/bash）都能照抄。
+- [一、核心特性](#一核心特性)
+- [二、快速开始](#二快速开始)
+- [三、目录结构](#三目录结构)
+- [四、产物矩阵与使用指南](#四产物矩阵与使用指南)
+- [五、配置与定制指南](#五配置与定制指南)
+  - [1. 术语表体系与缓存机制](#1-术语表体系与缓存机制)
+  - [2. 多音字与专业发音清洗](#2-多音字与专业发音清洗)
+- [六、质量检验与测试](#六质量检验与测试)
+- [七、常见问题 (FAQ)](#七常见问题-faq)
+- [八、排错与高级开发工具](#八排错与高级开发工具)
+- [九、版权与数据安全说明](#九版权与数据安全说明)
+- [十、开源许可](#十开源许可)
 
-### 0. 拿到代码
+---
+
+## 一、核心特性
+
+- **端到端一键生成**：从原始 PDF 到包含音频的单文件伴读网页，单条命令全自动完成。
+- **自包含零依赖（Zero Dependency）**：输出的 Web Reader 网页将音频（Base64）、样式与高精度时间戳完全打包在单个 HTML 文件内，断网可用、可直接传输至手机/平板浏览器打开。
+- **毫秒级卡拉OK逐句联动**：播放时段落平滑居中滚动，当前朗读的单句实时变色高亮；点击讲稿任意句子瞬间精准起播。
+- **多音字双保险引擎**：提示词源头口语规避 + 专有词底层同音注音清洗，确保声音引擎发音标准，同时界面文字 100% 保持纯正学术规范。
+- **全平台自适应交互**：PC 端支持空格快捷键与目录抽屉；移动端重构为大拇指分段切换器与居中大按键控制台，完美适配全面屏手势条并支持**锁屏控制与后台播放**。
+- **段级 LLM 缓存与术语复利**：支持多级作用域术语覆盖，修改硬替换术语零 API 成本、立刻生效。
+
+---
+
+## 二、快速开始
+
+### 1. 环境准备
+
+本项目要求 **Python ≥ 3.10**，推荐在虚拟环境中安装依赖：
 
 ```bash
+# 1. 克隆代码库
 git clone https://github.com/Octahedron-BB/paper-zh.git
 cd paper-zh
+
+# 2. 安装 Python 运行时依赖
+pip install -r requirements.txt
 ```
 
-### 1. 准备 Python 环境
+### 2. 配置 API 凭证
 
-需要 **Python ≥ 3.10**，装两个依赖：
+复制配置模板 `.env.example` 为 `.env`，填入 LLM 服务商密钥：
+
+```ini
+# 支持 deepseek（默认推荐）/ openai / gemini / 任意兼容端点
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-your-api-key-here
+```
+
+### 3. 一键运行命令
 
 ```bash
-pip install -r requirements.txt        # pymupdf + pyyaml
+# 1) 将文献 PDF 放置在 papers/ 目录下（如 s41575-024-00932-1.pdf）
+
+# 2) 全流程端到端执行（分段 -> 翻译 -> 讲稿 -> 对照 -> 语音 -> Web Reader）
+python tools/run_pipeline.py --pdf s41575-024-00932-1
+
+# 3) 批量自动处理 papers/ 下的所有 PDF 文献：
+python tools/run_pipeline.py --all
 ```
 
-建议用独立环境，别装进系统 Python：
+#### 常用参数速查：
 
-```bash
-conda create -n paper python=3.11 -y && conda activate paper
-# 或者：python -m venv .venv && source .venv/bin/activate   （Windows: .venv\Scripts\activate）
-```
-
-后面的命令都假设**这个环境已经激活**（激活后 `python` 就指向它）。
-如果你不想激活，也可以直接写解释器的完整路径，例如：
-`"C:\path\to\envs\paper\python.exe" tools/run_pipeline.py ...`
-
-### 2. 配置密钥
-
-复制 `.env.example` 为 `.env`，至少填一个 key：
-
-```
-DEEPSEEK_API_KEY=sk-...
-```
-
-支持的供应商：`deepseek`（默认）/ `openai` / `gemini` / 任何 OpenAI 兼容服务。
-`.env` 已被 git 忽略，**不要把 key 贴给别人或写进任何文档**。
-
-### 3. 跑一篇新文献
-
-```bash
-# 1) 把 PDF 放进 papers/（文件名就是文档 ID，建议保留期刊编号，如 s41575-024-00932-1.pdf）
-#    注意：仓库不含 PDF（版权原因），需要自己准备。
-
-# 2) 跑流水线（分段 + 翻译 + 讲稿，一条命令到底）
-python tools/run_pipeline.py --pdf s41575-024-00932-1 --stage all --workers 6
-
-# 神经科学类文献要加 --field：带 field 作用域的术语**只有指定了它才生效**
-# （首次指定后会记到 data/meta/，以后忘写也会自动沿用）
-python tools/run_pipeline.py --pdf s41583-025-00929-y --field neuroscience --stage all --workers 6
-```
-
-`--pdf` 可以直接写**文件名或 doc_id**（自动去 `papers/` 找、自动补 `.pdf`），也可以写相对/绝对路径。
-
-### 4. 生成中英对照文档
-
-```bash
-python tools/build_interleave.py --doc-id s41575-024-00932-1
-```
+| 参数 | 示例 | 说明 |
+| :--- | :--- | :--- |
+| `--pdf` | `--pdf vieta2018` | 指定 PDF（支持文件名、doc_id 或绝对路径，自动补 `.pdf`） |
+| `--all` | `--all` | 批量模式，自动循环处理 `papers/` 目录下的所有文献 |
+| `--stage` | `--stage audio` | 单步运行指定阶段：`segment` / `translate` / `script` / `interleave` / `audio` / `reader` / `all` |
+| `--limit` | `--limit 3` | 仅处理前 N 个段落（用于快速验证翻译与发音质量） |
+| `--field` | `--field neuroscience` | 指定学科域，激活对应领域的专业术语表 |
+| `--no-audio` | `--no-audio` | 纯文本模式，跳过语音合成与伴读网页打包 |
+| `--voice` | `--voice zh-TW-HsiaoChenNeural` | 指定 TTS 声音模型（默认台湾晓臻，柔和自然） |
+| `--rate` | `--rate +10%` | 语音朗读语速微调 |
 
 ---
 
-## 二、目录结构
+## 三、目录结构
 
 ```text
-<项目根目录>/
-├─ README.md              ← 本文件
-├─ requirements.txt       ← 依赖：pymupdf + pyyaml
-├─ .env                   ← 你的密钥（git 忽略，自己维护）
-├─ .env.example           ← 模板
-├─ glossary.yaml          ← ★ 主术语表（跨文献复用的核心资产，手动编辑）
-├─ glossary-d/            ← ★ 单篇术语覆盖，文件名 = <doc_id>.yaml
+paper-zh/
+├─ README.md                  # 项目说明与使用指南
+├─ requirements.txt           # 核心依赖清单 (pymupdf + pyyaml + edge-tts)
+├─ .env.example               # 环境变量与 API 密钥模板
+├─ glossary.yaml              # ★ 主术语表（跨文献复用的核心资产）
+├─ glossary-d/                # ★ 单篇文献专属术语表 (<doc_id>.yaml)
+├─ polyphone.yaml             # ★ 多音字与医学专有词发音清洗词典
 │
-├─ papers/                ← ★ 输入：把 PDF 放这里（git 忽略）
-├─ data/                  ← 产物（全部自动生成，git 忽略）
-│   ├─ segments/<id>.json       分段结果（结构 + 每段原文）
-│   ├─ translation/<id>.json/md 轨A 译文
-│   ├─ script/<id>.json/md      轨B 讲稿
-│   ├─ interleave/<id>.md       中英交错对照（+ reader.css 可选样式）
-│   └─ cache/                   段级 LLM 缓存（删了会重新花钱）
+├─ papers/                    # 输入目录：存放待处理 PDF 文献（git 忽略）
+├─ data/                      # 产物输出目录（全部自动生成，git 忽略）
+│   ├─ reader/<id>.html       # ★ 自包含双向伴读网页（双击即开）
+│   ├─ audio/<id>.mp3         # ★ 完整播客音频 + 毫秒级时间戳 JSON + LRC/VTT
+│   ├─ interleave/<id>.md     # 中英交错对照 Markdown（+ reader.css 样式）
+│   ├─ translation/<id>.md    # 轨A 忠实学术全译
+│   ├─ script/<id>.md         # 轨B 口语播客讲稿
+│   ├─ segments/<id>.json     # 结构化段落分块数据
+│   └─ cache/                 # 段落级 LLM 响应缓存
 │
-├─ tools/                 ← 命令行入口
-│   ├─ run_pipeline.py         主程序
-│   ├─ build_interleave.py     生成中英对照
-│   ├─ qa_report.py            六项自动体检
-│   ├─ check_terms.py          缩写/同名异义审计（翻译前该跑）
-│   └─ batch_segment.py        跨期刊分段健康检查
+├─ tools/                     # 命令行工具入口
+│   ├─ run_pipeline.py        # ★ 端到端主工作流入口
+│   ├─ build_audio.py         # 语音合成与时间戳对齐工具
+│   ├─ build_reader.py        # 自包含 Web Reader HTML 打包器
+│   ├─ build_interleave.py    # 中英交错对照生成器
+│   ├─ qa_report.py           # 自动化翻译与讲稿质量体检报告
+│   └─ check_terms.py         # 术语命中与缩写冲突审计工具
 │
-├─ devtools/              ← ★ 排错工具（换新期刊时用，详见第八节）
-│   └─ inspect_lines.py        逐行打印「这行被判成什么了，为什么」
+├─ src/                       # 核心业务模块
+│   ├─ polyphone.py           # 多音字发音清洗与正则转换
+│   ├─ textnorm.py            # 中文排版规范化与数字千分位处理
+│   ├─ prompts.py             # 提示词模板与版本控制器
+│   ├─ segment.py             # PDF 版式分析与多栏提取算法
+│   ├─ translate.py           # 轨A 翻译执行器
+│   ├─ rewrite.py             # 轨B 讲稿重写执行器
+│   └─ glossary.py            # 术语解析与作用域分发引擎
 │
-├─ tests/                 ← 离线测试（不需要密钥）
-│   ├─ test_core.py            18 项：术语表 / 缓存 / 后处理
-│   ├─ test_segment.py         8 项：分段结构不变量
-│   └─ segment_baseline.json   分段基准数字
+├─ devtools/                  # 开发者排错工具
+│   └─ inspect_lines.py       # PDF 文本行级版式判定探针
 │
-└─ archive/               ← 本地杂物（git 忽略）：日志、历史版本、一次性探针
+└─ tests/                     # 离线自动化测试套件
+    ├─ test_core.py           # 核心测试（术语表 / 缓存 / 多音字 / 缩写处理）
+    └─ test_segment.py        # 分段不变量与结构完整性测试
 ```
 
 ---
 
-## 三、产物怎么看
+## 四、产物矩阵与使用指南
 
-| 文件 | 用途 | 怎么看 |
-|---|---|---|
-| `data/interleave/<id>.md` | **中英对照**（推荐） | VS Code 打开 → `Ctrl+K V` / `Cmd+K V` 开侧边预览 → 用「大纲视图」跳章节 |
-| `data/translation/<id>.md` | 纯中文译文 | 直接读；句子里的 `图2`/`表1` 是**悬空引用**（图表我们不做，属预期） |
-| `data/script/<id>.md` | 中文口语讲稿 | 这是**给耳朵**的稿子，读起来会比译文啰嗦，正常 |
-| `data/*/<id>.json` | 结构化数据 | 音频定位/工具用，不用手看 |
+| 产物路径 | 格式与类型 | 适用场景与推荐使用方式 |
+| :--- | :--- | :--- |
+| `data/reader/<doc_id>.html` | **自包含双向伴读网页** *(⭐推荐)* | **PC / 移动端浏览器直接打开**：内嵌完整音频、卡拉OK逐句高亮、点句即播、三视图切换、支持锁屏后台播放。 |
+| `data/audio/<doc_id>.mp3` | **独立音频流** | 配合主流音频播放器使用，同目录配有 `.lrc` 与 `.vtt` 字幕。 |
+| `data/interleave/<doc_id>.md` | **中英交错对照** | VS Code 打开按 `Ctrl+K V` / `Cmd+K V` 打开预览，通过大纲视图快速精读对照。 |
+| `data/translation/<doc_id>.md` | **中文学术全译** | 逐段忠实翻译，适合快速查阅专业细节。 |
+| `data/script/<doc_id>.md` | **中文口语讲稿** | 听觉友好的口语讲解文稿，去除了图表悬空指涉。 |
 
-关于对照文档的**样式**（可选项）：把英文压灰压小，读中文时几乎不干扰视线。
-仓库里已经带了 `.vscode/settings.json`，**clone 下来开箱即用**；
-如果你的编辑器没生效，手动在自己的 `settings.json` 里加一行即可
-（VS Code 支持相对工作区根的路径，所以不必写死绝对路径）：
-
-```json
-"markdown.styles": ["data/interleave/reader.css"]
-```
+### Web Reader 伴读网页交互特性：
+1. **三视图自由切换**：点击顶部切换器可在【中英对照】、【口语讲稿】与【忠实全译】之间无缝切换。
+2. **逐句变色高亮**：在【口语讲稿】视图下，系统将自动跟踪播放进度，当前正在朗读的句子会高亮变色。
+3. **点句即播（Seek on Click）**：鼠标或手指点击讲稿中的任意单句，播放器将瞬间跳转至该句起点播放。
+4. **移动端后台保活**：基于 W3C `MediaSession API`，在 Android Chrome / iOS Safari 中切入后台或锁屏时，均可维持后台发声并通过系统锁屏面板控制进度。
 
 ---
 
-## 四、哪些地方可以手动调整
+## 五、配置与定制指南
 
-| 想改什么 | 改哪里 | 代价 |
-|---|---|---|
-| **某个术语的中文译名** | `glossary.yaml` | **零成本**（见下方说明） |
-| 某篇文献里的特殊含义 | `glossary-d\<doc_id>.yaml` | 零成本或只重译命中段 |
-| 讲稿的语气/口语程度 | `src/prompts.py` 的 `SCRIPT_SYSTEM` | **递增 `SCRIPT_VERSION` → 全部重跑** |
-| 翻译的语体/规则 | `src/prompts.py` 的 `TRANSLATE_SYSTEM` | 递增 `TRANSLATE_VERSION` → 全部重译 |
-| 数字格式、去重复词等 | `src/textnorm.py` | **零成本**（不进缓存） |
-| 版式识别阈值（换期刊时） | `src/segment.py` 顶部常量 | 递增 `SEGMENTER_VERSION`，分段会变 |
-| 一次处理哪些段 | `run_pipeline.py --limit N` / `--only <sid>` | 少花钱，适合试水 |
+### 1. 术语表体系与缓存机制
 
-### ⭐ 术语表：理解这一点能省很多钱
+术语表是本系统跨文献沉淀的核心资产。系统将术语分为两类，其执行成本与处理逻辑截然不同：
 
-术语分两类，**成本完全不同**：
+- **`mode: hard_replace`（硬替换，默认推荐）**：
+  翻译完成后由引擎进行确定性字符串替换。由于中文无曲折变化，此方式**零 API 消耗、修改后重跑即刻生效**。
+- **`mode: prompt_hint`（上下文注入）**：
+  直接注入 LLM 提示词中（用于解决语义歧义或需要重构句式的情况）。修改此类术语**仅会导致命中该词的特定段落重新翻译**。
 
-- `mode: hard_replace`（默认）——译文生成后**做字符串替换**。
-  中文没有性/数/格变化，换词近乎无损，所以**改它 0 次 API、立刻生效**。
-  实例：`retrieval stopping -> 检索停止`
-- `mode: prompt_hint` ——必须进提示词（歧义澄清、要改句结构）。
-  改它**只重译真正命中该术语的段落**。
-
-**原则：能用字符串替换解决的，绝不调 LLM。**
-所以遇到译名不满意，先试着加/改一条 `hard_replace`，而不是急着重跑。
-
-术语表的**作用域**（同名异义就靠它）：
-
+#### 术语作用域优先级 (`scope`)：
 ```yaml
 - term: MSN
   zh: 中型棘状神经元
-  scope: field:neuroscience        # 只在神经科学域生效
+  scope: field:neuroscience        # 学科域生效
 - term: MSN
   zh: 内侧隔核
-  scope: doc:s41583-025-00929-y    # 只在这一篇生效（优先级最高）
+  scope: doc:s41583-025-00929-y    # 单篇文献专属覆盖（优先级最高）
 ```
-
-优先级 `doc` > `field` > `global`；同级出现两种译法会**直接报错中止**，不会静默挑一个。
-
-### ⚠️ 版本号是与缓存绑定的
-
-`src/prompts.py` 的 `*_VERSION` 和 `src/segment.py` 的 `SEGMENTER_VERSION`
-都是**缓存键的一部分**。改了规则却不递增版本号 → 缓存会把旧结果当成有效的继续用
-（**静默不生效**，最难发现的一类 bug）。改了代码觉得"怎么没变化"，先查这里。
+> **解析规则**：优先级为 `doc` > `field` > `global`。同级若出现冲突将报错中断，避免静默混淆。
 
 ---
 
-## 五、质量检查
+### 2. 多音字与专业发音清洗
+
+针对医学和科技文献中常见的专有词读音错误（如“黏膜”误读为 *zhān*、“血栓栓塞”误读为 *sāi*、“校正”误读为 *xiào*），系统采用双层处理：
+
+1. **源头提示词规避**：在生成讲稿阶段，自动将生硬的书面缩略句式转换为明确的口语表达（如“表现为”改写为“主要表现是”）。
+2. **底层发音清洗字典 (`polyphone.yaml`)**：
+   在调用声音合成引擎的底层内存流中，自动进行谐音替换（如将送往 TTS 的文字替换为“粘膜”、“栓色”、“矫正”）。
+
+```yaml
+# polyphone.yaml 示例
+rules:
+  - word: "黏膜"
+    tts: "粘膜"
+    note: "确保读 nián mó"
+  - word: "血栓栓塞"
+    tts: "血栓栓色"
+    note: "确保塞读 sè"
+```
+> **核心保证**：网页展示、字幕和讲稿文字 **100% 保持专业医学书写**，仅底层音频引擎获得发音修正。
+
+---
+
+## 六、质量检验与测试
+
+系统内置了全面的自动化质量检查与回归测试套件：
 
 ```bash
-# 六项体检：译文完整性 / 讲稿保全率 / 未翻译残留 / 数字保真 / 术语落地 / 提示词泄漏
+# 1. 运行六项质量体检（词比/讲稿保全率/未译残留/数字保真/术语落地/提示词泄漏）
 python tools/qa_report.py
 
-# 离线测试（不花钱、不需要密钥）
-python tests/test_core.py
-python tests/test_segment.py
-
-# 跨期刊分段体检（新加期刊时先跑这个）
-python tools/batch_segment.py
-
-# 翻译**之前**的缩写/同名异义审计（新领域必跑）
-python tools/check_terms.py --doc-id <doc_id>
+# 2. 运行离线单元测试套件（无需 API 密钥）
+python tests/test_core.py       # 19/19 项测试：术语作用域、多音字映射、缩写清洗、段级缓存
+python tests/test_segment.py    # 8/8 项测试：PDF 分段解析结构不变量
 ```
 
-`test_segment.py` 需要 `papers/` 里有对应 PDF；没有就自动跳过（会打印「可用样本」），
-所以**别人 clone 下来不装 PDF 也能跑通**。
+---
 
-**目前状态**：4 篇文献（62 / 109 / 37 / 53 段）全部完成，0 失败；
-体检各项达标；测试 `test_core.py` 18/18、`test_segment.py` 8/8。
+## 七、常见问题 (FAQ)
 
-**成本参考**：一篇 1.2 万词的综述，全篇翻译约 **0.16 元**量级。
-所以"省 token"不是做段落缓存的理由 —— 段级缓存真正保护的是
-**你人工校订过的成果**（钱买不到）和**术语一致性**。
+**Q：执行时报 `ModuleNotFoundError` 缺失依赖？**
+请确保激活了正确的 Python 环境并安装了依赖：`pip install -r requirements.txt`。
+
+**Q：为什么讲稿里完全没有“如表1所示/见图2”？**
+这是预期设计。轨B（口语讲稿）面向听觉场景，听众无法实时查阅图表，因此系统在提示词层面已自动剥除图表指涉，确保讲解平滑完整。
+
+**Q：修改了术语表或多音字表后如何重新生成？**
+- 若修改了 `glossary.yaml` 中的 `hard_replace` 术语：直接运行 `python tools/run_pipeline.py --pdf <id> --stage translate`（0 API 开销）。
+- 若修改了 `polyphone.yaml` 发音词典：直接运行 `python tools/run_pipeline.py --pdf <id> --stage audio` 重新合成音频。
 
 ---
 
-## 六、常见问题
+## 八、排错与高级开发工具
 
-**Q：报 `ModuleNotFoundError: No module named 'pymupdf'`？**
-没装依赖，或者 `python` 指向了别的环境。先 `pip install -r requirements.txt`，
-再确认 `python -c "import pymupdf; print(pymupdf.__version__)"` 有输出。
-
-**Q：终端里中文全是乱码（Windows）？**
-PowerShell 的老问题，**不要用 `>` 重定向看中文输出**。用：
-`... | Out-File -FilePath out.txt -Encoding utf8; Get-Content out.txt -Encoding utf8`
-（macOS 的 bash/zsh 默认 UTF-8，没有这个问题。）
-
-**Q：长命令在 PowerShell 里执行不了 / 被吃掉？**
-Windows PowerShell 对多行和超长命令不稳定（PSReadLine 的已知毛病）。
-写成脚本文件跑，或拆成短命令。
-
-**Q：改了术语表，译文没变化？**
-看你改的是哪一类。`hard_replace` 立刻生效（重跑一次让它重新做后处理即可，0 次 API）；
-`prompt_hint` 要重跑命中段。
-
-**Q：为什么产物里说"见表1/图2"，却没有表1图2？**
-**这是预期行为**：图表和 Box 一律不处理。轨A 只用来对照原文看，看懂即可；
-轨B（讲稿）里的图表指涉已经在提示词层面清掉了（否则听的人无从查证）。
-
-**Q：能不能把多篇文献的译文合成一本书？**
-可以，`data/translation/*.md` 直接拼；但注意 sid 锚点要保留（音频定位依赖它）。
-
----
-
-## 七、已知问题 / 还没做
-
-未做：**TTS**（配音）与段落时间戳。这是最后一层，不影响上面任何缓存，
-随时可以加；讲稿已经为它准备好了。
-
-已知的小问题（都不影响阅读，诚实列出）：
-
-1. `data\script\` 里有极少数句子残留图表指涉（4 篇里 1 处）。
-2. 段级缓存键里**没有章节名**，而讲稿提示词里有「所在章节」。
-   影响极小（译文完全相同的段落才会撞），但属于"键没覆盖输入"的隐患。
-3. 有一段（s41575，4 段）在修标题时被移除，我验证了总词数在基准 ±3% 内，
-   **但没有逐段确认**它们都是图注片段。若要严谨，值得人工扫一眼。
-
----
-
-## 八、调试脚本怎么放（`devtools/` 与 `archive/`）
-
-调试期积累了很多脚本。**“要不要上传”不该按“是不是调试用的”来分，
-而该按“换台电脑还需不需要它”来分**：
-
-| 类别 | 放哪 | 上传？ | 为什么 |
-|---|---|---|---|
-| **可复用的排错工具** | `devtools/` | ✅ | 换新期刊/换设备真的会再用 |
-| 一次性输出日志（`*.txt`） | `archive/` | ❌ | 它是“上次运行的输出”，不是资产；要看重新跑一条命令就有 |
-| 只针对某一篇的探针、历史版本（`segment_v1..v5.py`） | `archive/` | ❌ | 没有复用价值；演进的**理由**已经写在笔记里，代码本身留本地就够 |
-
-`archive/` 已在 `.gitignore` 里，所以**本地的杂物不会跟着上传**，
-而 `devtools/` 会跟着走 —— 这样“跨设备调试方便”和“仓库干净”两件事就不冲突了，
-**不需要开第二个仓库，也不需要搞分支**。
-
-### `devtools/inspect_lines.py`：换新期刊时的第一把工具
-
-换一篇新期刊发现分段不对时，标准动作是：
+当引入新期刊排版导致分段异常时，可使用内置的版式探针工具定位行级特征：
 
 ```bash
-# 1) 先看整体健康度（会报“段落数偏少/最长段过大/标题数过少”）
+# 检查整篇文献的分段分布健康度
 python tools/batch_segment.py
 
-# 2) 定位出问题的那一行，看它被判成了什么、为什么
-python devtools/inspect_lines.py papers/xxx.pdf --grep "Anal cancer" --around 2
+# 探针：打印指定 PDF 文本行的坐标、字号、主导字体与版式分类判定
 python devtools/inspect_lines.py papers/xxx.pdf --page 4
-python devtools/inspect_lines.py papers/xxx.pdf --kind runin,h1,h2
-```
-
-它会打印每行的：页码 / 栏 / y / x0 / 字号 / **主导字体** / **判定 kind**，
-以及是否落在矩形里（`R`）因而被当 region 排除（`X`）。
-拿着这些字段对照 `src/segment.py` 的 `_classify()`，就知道是哪条规则判错了。
-
-补充说明：调试期写过 40 多个探针脚本（在 `archive/scratch/`），
-但它们几乎都只针对某一篇 PDF 的某个具体问题，换一篇就没用了。
-真正反复用到的能力只有一个 ——“这一行文字被当成什么了？为什么？”，
-所以只把这一件事固化成了工具，其余留在本地不上传。
-
----
-
-## 九、上传到 GitHub 前必须知道的事
-
-### ⚠️ 版权：不要把"产物"传上去
-
-这个工具会**把你的全文翻译写进 `data/translation/`、`data/script/`**。
-Nature Reviews 这类期刊多为订阅刊，条款明确禁止再分发。
-**把整篇中文译文推到公开仓库，属于"向公众提供"，和我们自己定的红线直接冲突。**
-
-所以 `.gitignore` 里已经把下面这些全部排除了：
-
-| 不提交 | 原因 |
-|---|---|
-| `papers/*.pdf` | 原文版权 |
-| `data/translation/`、`data/script/` | **全文译文/讲稿，版权风险最高** |
-| `data/segments/`、`data/interleave/` | 派生自原文 |
-| `data/cache/` | LLM 缓存，且体积不可控 |
-| `archive/`、`.brainstorm-notes/` | 私人开发记录 |
-| `.env` | 密钥 |
-
-**仓库里保留的是工具本身**：`src/`、`tools/`、`tests/`、术语表、README。
-这才是可分享、可复现、无版权风险的部分。
-
-### 建议仓库带上的东西
-
-- `requirements.txt` ✅（已带）
-- `.vscode/settings.json` ✅（已带，让对照文档的样式开箱即用）
-- `LICENSE` ✅（已带 MIT，见第十节）
-- 仓库描述里写一句「工具，不含任何论文原文或译文」
-
-### 提交前自查
-
-```bash
-# 确认该忽略的都没被跟踪（应该看不到 .env / papers/ / data/）
-git status --short
-git ls-files | grep -E 'data/|papers/|\.env'   # 应无输出
+python devtools/inspect_lines.py papers/xxx.pdf --grep "Anal cancer" --around 2
 ```
 
 ---
 
-## 十、许可
+## 九、版权与数据安全说明
 
-**MIT**（见 `LICENSE`）。**但请注意许可范围。**
+- **合规边界**：学术综述版权归原期刊与作者所有。本项目全套产物（译文、讲稿、音频、HTML 伴读）**仅供个人学习与研究使用**，严禁用于公开分发或商业用途。
+- **Git 隔离防护**：项目 `.gitignore` 已配置严格规则，默认排除所有输入 PDF（`papers/*.pdf`）及所有生成数据（`data/`），防止版权敏感资产意外同步至公开代码仓库。
 
-MIT 只覆盖**本仓库里的代码**。它**不覆盖**你用本工具生成的内容 ——
-译文、讲稿、对照文档、以后可能有的音频。那些东西源自第三方受版权保护的论文，
-能不能分发、发给谁，由论文权利人与你的使用场景决定。
+---
 
-换句话说：**代码可自由使用，产物要自己把握。**
+## 十、开源许可
 
+本项目代码基于 [MIT License](LICENSE) 开源发布。
+许可证仅适用于代码库本身的实现，不涵盖用户通过本工具处理的第三方文献及其派生产物。
