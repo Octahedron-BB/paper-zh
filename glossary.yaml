@@ -102,9 +102,15 @@ terms:
     mode: hard_replace
     aliases: ["思考/不思考", "想/不想任务", "思考-不思考任务"]
   - term: SIF
-    zh: SIF（压抑诱发的遗忘）
+    # ⚠️ zh 必须只写「译名本身」。曾经写成 `SIF（压抑诱发的遗忘）`，后果：
+    #    prompt 里呈现为 `SIF -> 「SIF（压抑诱发的遗忘）」`，而**这句话本身就是最强指令**，
+    #    于是 LLM 在句子里整串照抄，全篇 24 处 SIF 里有 12 处变成
+    #    「…以 SIF（压抑诱发的遗忘）衡量…」—— 啰嗦、前后不一致，配 TTS 还要念 12 遍全称。
+    #    当时 note 里其实已经写明了"首次给全称、之后用 SIF"，但**弱提醒敌不过 zh 的字面写法**。
+    #    结论：解释放 note，译名放 zh，两者不要混。
+    zh: SIF
     mode: prompt_hint
-    note: 缩写首次出现时给全称"suppression-induced forgetting"及中文，之后可直接用 SIF
+    note: 首次出现时给出中文全称"压抑诱发的遗忘"，之后一律只用 SIF；不要把全称写进每一处
     pattern: "(?<![A-Za-z])SIF(?![A-Za-z])"
     full_en: suppression-induced forgetting
     scope: doc:s41583-025-00929-y
