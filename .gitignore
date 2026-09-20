@@ -11,7 +11,7 @@ data/
 
 # 私人开发记录
 archive/
-.brainstorm-notes/
+# .brainstorm-notes/
 
 # Python
 __pycache__/
