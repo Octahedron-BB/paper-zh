@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -54,12 +55,51 @@ def resolve_pdf(name: str | None) -> Path:
     return ROOT / "papers" / p      # 都不存在 -> 交给下游报“文件不存在”
 
 
+META_DIR = ROOT / "data" / "meta"
+
+
+def resolve_field(doc_id: str, cli_field: str | None) -> str | None:
+    """把学科域跟着文档记录下来，避免“忘记 --field 就静默少用一批术语”。
+
+    ⚠️ 实测（s41583）：带 `--field neuroscience` 时生效 **30** 条术语，
+    不带只剩 **25** 条 —— DLPFC / VLPFC / SSRT 的 scope 都是 `field:neuroscience`，
+    全部被丢掉。而 `hard_replace` 类术语**按设计不进缓存键**（这样改译名才免费），
+    所以缓存依然 100% 命中、命令也不报错，**产物静默降级**。
+    唯一能发现的地方是 QA 的 [E] 项 —— 这个坑就是这么被发现的。
+
+    对策：首次指定时把 field 记到 `data/meta/<doc_id>.json`，以后忘了参数就沿用；
+    如果前后不一致则响亮提醒（换一套术语会让同一篇的译文前后不统一）。
+    """
+    meta = META_DIR / f"{doc_id}.json"
+    saved: str | None = None
+    if meta.exists():
+        try:
+            saved = json.loads(meta.read_text(encoding="utf-8")).get("field")
+        except (ValueError, OSError):
+            saved = None
+    if cli_field is None and saved:
+        print(f"[field] 本次未指定，沿用记录值 field={saved!r}"
+              f"（否则会静默少用 field 级术语）")
+        return saved
+    if cli_field and saved and cli_field != saved:
+        print(f"[field] ⚠️ 本次 field={cli_field!r} 与记录值 {saved!r} 不一致："
+              f"术语表会换一套，同一篇的译文可能前后不一致")
+    if cli_field:
+        META_DIR.mkdir(parents=True, exist_ok=True)
+        meta.write_text(json.dumps({"doc_id": doc_id, "field": cli_field},
+                                   ensure_ascii=False, indent=1), encoding="utf-8")
+    return cli_field if cli_field is not None else saved
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="文献 -> 中文分层伴读 流水线")
     ap.add_argument("--pdf", default=None,
                     help="目标 PDF：可给绝对路径、相对路径，或只给文件名/doc_id（在 papers/ 里找）")
     ap.add_argument("--doc-id", default=None, help="文档 ID（默认取 PDF 文件名）")
-    ap.add_argument("--field", default=None, help="学科域，用于 field 级术语，如 neuroscience")
+    ap.add_argument("--field", default=None,
+                    help="学科域，用于 field 级术语（如 neuroscience）。"
+                         "⚠️ 带 field 作用域的术语**只有指定了它才生效**；"
+                         "首次指定后会记录到 data/meta/，以后可省略")
     ap.add_argument("--stage", choices=["segment", "translate", "script", "all"],
                     default="all")
     ap.add_argument("--provider", default=None, help="deepseek / openai / gemini / mock")
@@ -73,7 +113,7 @@ def main() -> int:
     load_env(ROOT / ".env")
     pdf = resolve_pdf(args.pdf)
     doc_id = args.doc_id or pdf.stem
-    field = args.field
+    field = resolve_field(doc_id, args.field)
 
     print("=" * 76)
     print(f"[文档] {pdf.name}  doc_id={doc_id}  field={field or '(无)'}")

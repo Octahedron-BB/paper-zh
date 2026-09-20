@@ -63,7 +63,8 @@ DEEPSEEK_API_KEY=sk-...
 # 2) 跑流水线（分段 + 翻译 + 讲稿，一条命令到底）
 python tools/run_pipeline.py --pdf s41575-024-00932-1 --stage all --workers 6
 
-# 神经科学类文献建议加 --field，让学科级术语生效
+# 神经科学类文献要加 --field：带 field 作用域的术语**只有指定了它才生效**
+# （首次指定后会记到 data/meta/，以后忘写也会自动沿用）
 python tools/run_pipeline.py --pdf s41583-025-00929-y --field neuroscience --stage all --workers 6
 ```
 
