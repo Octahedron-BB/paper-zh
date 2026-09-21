@@ -24,11 +24,27 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-import edge_tts  # noqa: E402
 from src.polyphone import load_polyphone_rules, apply_polyphone_rules  # noqa: E402
 
 DEFAULT_VOICE = "zh-TW-HsiaoChenNeural"
 AUDIO_DIR = ROOT / "data" / "audio"
+
+
+def _edge_tts():
+    """延迟导入 edge-tts。
+
+    edge-tts 只在真正合成语音时才需要。若放在模块顶层导入，
+    `normalize_script_for_tts`（纯文本：缩写连读 + 多音字清洗）在没装 TTS 引擎的
+    机器上就连导入都失败，既无法复用也无法被测试覆盖；延迟导入后，文本规范化
+    逻辑处处可用，只有真正合成音频时才要求该依赖。
+    """
+    try:
+        import edge_tts  # noqa: PLC0415
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "缺少 edge-tts 依赖，无法合成语音。请先安装：pip install -r requirements.txt"
+        ) from exc
+    return edge_tts
 
 
 def normalize_script_for_tts(
@@ -153,7 +169,7 @@ async def synthesize_segment(
     out_mp3.parent.mkdir(parents=True, exist_ok=True)
     out_meta.parent.mkdir(parents=True, exist_ok=True)
 
-    communicate = edge_tts.Communicate(norm_text, voice, rate=rate, pitch=pitch)
+    communicate = _edge_tts().Communicate(norm_text, voice, rate=rate, pitch=pitch)
     audio_data = bytearray()
     raw_sentences = []
 
