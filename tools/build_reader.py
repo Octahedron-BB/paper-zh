@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from src.docs import resolve_doc_id  # noqa: E402
+
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="zh-CN">
@@ -1094,11 +1096,14 @@ def build_reader(doc_id: str, embed_audio: bool = True) -> Path:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="生成自包含双向伴读 HTML 网页")
-    ap.add_argument("--doc-id", default="s41575-024-00932-1", help="文档 ID")
+    ap.add_argument("--doc-id", default=None,
+                    help="文档 ID（省略时自动挑；有多个会报错）")
     ap.add_argument("--no-embed", action="store_true", help="不内嵌音频(改用相对路径引用)")
     args = ap.parse_args()
 
-    build_reader(doc_id=args.doc_id, embed_audio=not args.no_embed)
+    # ⚠️ 以前这个参数默认写死成另一篇文献，忘传就静默对错文档干活
+    doc_id = resolve_doc_id(ROOT, args.doc_id, stage="audio")
+    build_reader(doc_id=doc_id, embed_audio=not args.no_embed)
     return 0
 
 

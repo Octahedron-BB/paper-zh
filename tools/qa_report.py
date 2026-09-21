@@ -9,11 +9,13 @@
   F. 提示词泄漏   —— 译文里是否混入 prompt 结构、"译文："之类
   G. 前缀变体     —— 译文里是否还残留 aDLPFC / rVLPFC 这类带前缀缩写
 
-跑法：python tools/qa_report.py
+跑法：python tools/qa_report.py                  # 自动扫 data/translation/ 下全部文档
+      python tools/qa_report.py --doc vieta2018   # 只看指定文献
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -23,17 +25,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from src.docs import processed_docs  # noqa: E402
 from src.glossary import (  # noqa: E402
     MODE_HARD, PREFIX_ZH, hits_for_text, is_abbrev_term, load_glossary_dir,
 )
 from src.model import Document  # noqa: E402
 
-DOCS = [
-    ("s41583-025-00929-y", "neuroscience"),
-    ("s41575-024-00932-1", None),
-    ("s41574-022-00638-x", None),
-    ("vieta2018", None),
-]
 LATIN_WORD = re.compile(r"[A-Za-z][A-Za-z'\-]{1,}")
 # ⚠️ 绝对不能用 \w —— Python 的 \w 在 Unicode 下**匹配汉字**，
 #    于是「高达81%」里的 81 前面有个汉字，lookbehind 就失败了，
@@ -166,15 +163,33 @@ def check_doc(doc_id: str, field: str | None) -> None:
         print(f"      {m}  {loc(sid)}")
 
 
-def main() -> None:
-    for doc_id, field in DOCS:
+def main() -> int:
+    ap = argparse.ArgumentParser(description="跨文档 QA：全量翻译后主动挑毛病。")
+    ap.add_argument("--doc", nargs="*", default=None,
+                    help="只检查指定 doc_id（默认扫 data/translation/ 下全部文档）")
+    args = ap.parse_args()
+
+    docs = processed_docs(ROOT)
+    if args.doc:
+        wanted = set(args.doc)
+        for m in sorted(wanted - {d for d, _ in docs}):
+            print(f"[跳过] 找不到 {m} 的轨A 产物（data/translation/{m}.json）")
+        docs = [d for d in docs if d[0] in wanted]
+    if not docs:
+        print("[错误] data/translation/ 下没有任何产物；先跑 tools/run_pipeline.py")
+        return 1
+
+    print(f"待检查 {len(docs)} 篇："
+          + ", ".join(f"{d}(field={f or '无'})" for d, f in docs))
+    for doc_id, field in docs:
         try:
             check_doc(doc_id, field)
         except Exception as e:  # noqa: BLE001
             import traceback
             print(f"\n■ {doc_id}: 检查抛异常 {type(e).__name__}: {e}")
             print("   " + traceback.format_exc().replace("\n", "\n   ")[:500])
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

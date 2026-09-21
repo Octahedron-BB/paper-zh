@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from src.docs import pdf_ids  # noqa: E402
 from src.cache import Cache  # noqa: E402
 from src.glossary import load_glossary_dir  # noqa: E402
 from src.providers import build_provider, load_env  # noqa: E402
@@ -47,15 +48,25 @@ from tools.build_interleave import run_build_interleave  # noqa: E402
 from tools.build_audio import DEFAULT_VOICE, run_audio_pipeline  # noqa: E402
 from tools.build_reader import build_reader  # noqa: E402
 
-PDF_DEFAULT = ROOT / "papers" / "s41575-024-00932-1.pdf"
 META_DIR = ROOT / "data" / "meta"
 
 
 def resolve_pdf(name: str | None, doc_id: str | None = None) -> Path:
-    """找 PDF。支持绝对路径、相对路径、文件名、或 doc_id。"""
+    """找 PDF。支持绝对路径、相对路径、文件名、或 doc_id。
+
+    ⚠️ 以前 name/doc_id 都没给时会返回一个**硬编码的默认 PDF**
+    （s41575-024-00932-1）—— 忘传参数时会静默对着另一篇文献跑完全流程。
+    现在改成：papers/ 下只有一篇就用它，多篇就报错并列出来。
+    """
     target = name or doc_id
     if not target:
-        return PDF_DEFAULT
+        ids = pdf_ids(ROOT)
+        if len(ids) == 1:
+            return ROOT / "papers" / f"{ids[0]}.pdf"
+        if not ids:
+            raise SystemExit("[错误] papers/ 下没有任何 PDF")
+        raise SystemExit(
+            f"[错误] papers/ 下有 {len(ids)} 篇，请显式指定 --pdf：{', '.join(ids)}")
     p = Path(target)
     cands = ([p] if p.is_absolute() else []) + [
         ROOT / p,

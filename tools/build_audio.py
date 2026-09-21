@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from src.docs import resolve_doc_id  # noqa: E402
 from src.polyphone import load_polyphone_rules, apply_polyphone_rules  # noqa: E402
 
 DEFAULT_VOICE = "zh-TW-HsiaoChenNeural"
@@ -355,7 +356,8 @@ async def run_audio_pipeline(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="生成讲稿音频与双向定位时间戳")
-    ap.add_argument("--doc-id", default="s41575-024-00932-1", help="文档 ID")
+    ap.add_argument("--doc-id", default=None,
+                    help="文档 ID（省略时自动挑；有多个会报错）")
     ap.add_argument("--voice", default=DEFAULT_VOICE, help="edge-tts 语音名称")
     ap.add_argument("--rate", default="+0%", help="语速微调，如 +5% / -5%")
     ap.add_argument("--pitch", default="+0Hz", help="音调微调，如 +2Hz / -2Hz")
@@ -364,8 +366,10 @@ def main() -> int:
     ap.add_argument("--only", nargs="*", default=None, help="只处理指定 sid")
     args = ap.parse_args()
 
+    # ⚠️ 以前这个参数默认写死成另一篇文献，忘传就静默对错文档干活
+    doc_id = resolve_doc_id(ROOT, args.doc_id, stage="script")
     asyncio.run(run_audio_pipeline(
-        doc_id=args.doc_id,
+        doc_id=doc_id,
         voice=args.voice,
         rate=args.rate,
         pitch=args.pitch,

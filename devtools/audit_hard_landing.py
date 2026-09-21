@@ -18,21 +18,18 @@ from pathlib import Path
 sys.path.insert(0, ".")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from src.docs import processed_docs  # noqa: E402
 from src.glossary import MODE_HARD, load_glossary_dir  # noqa: E402
 
 ROOT = Path(".")
-FIELDS = {
-    "s41583-025-00929-y": "neuroscience",
-    "s41575-024-00932-1": None,
-    "s41574-022-00638-x": None,
-    "vieta2018": None,
-}
+# ⚠️ 这里以前是一张硬编码的 4 篇清单 —— 新处理的文献不会被体检到。
+#    现在扫 data/translation/ 自动发现（见 src/docs.py 的注释）。
 # 想看到"替代写法"时，从译文里找这些线索词（中文部分片段 / 英文缩写本身）
 PROBE = re.compile(r"[A-Z]{2,8}|背外侧|腹外侧|额叶|停止信号|反应时|前额叶")
 
 
 def main() -> None:
-    for doc, field in FIELDS.items():
+    for doc, field in processed_docs(ROOT, stage="translation"):
         terms = load_glossary_dir(ROOT, doc_id=doc, field=field)
         hard = [t for t in terms if t.mode == MODE_HARD]
         tr = json.loads(Path(f"data/translation/{doc}.json").read_text(encoding="utf-8"))["segments"]

@@ -22,20 +22,43 @@ def sha1(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
+_TITLE_QUOTES = re.compile(r"[\u2018\u2019\u201c\u201d]")
+
+
 def slug(text: str, maxlen: int = 40) -> str:
-    """把标题变成可读、稳定的 ASCII slug。非 ASCII 字符转成其码点，避免丢失区分度。"""
-    s = text.strip().lower()
-    s = re.sub(r"[\u2018\u2019\u201c\u201d]", "", s)
-    out = []
-    for ch in s:
-        if ch.isascii() and (ch.isalnum()):
-            out.append(ch)
-        elif ch in " -_/:":
-            out.append("-")
-        else:
-            out.append(f"u{ord(ch):04x}")
-    slugged = re.sub(r"-+", "-", "".join(out)).strip("-")
-    return slugged[:maxlen] or "sec"
+    """把标题变成可读、稳定的 ASCII slug。
+
+    规则（三个坑都踩过，改这里之前请读完）：
+
+    1. 字母数字原样保留；**ASCII 标点折叠成 `-`**。
+       原实现把 `.` `,` 也走"转码点"分支，于是 `Non-antibiotic drugs.` 变成
+       `non-antibiotic-drugsu002e`。实测全仓库 176 处（`u002e` 108 / `u002c` 68），
+       节路径与音频分段目录名一起被污染：既不可读，又白吃 40 字符预算。
+    2. **非 ASCII 转 `uXXXX` 码点**。中文等标题只能靠它保存区分度，不能一刀切丢掉。
+    3. 截断**只在完整原子边界发生**。原实现的 `slugged[:maxlen]` 会把 `u002e`
+       切成 `u00`：残片不可反解析，而且不同标题可能因此撞成同一条路径。
+       顺手还修掉了"单词被拦腰砍断"（`...and-othe` / `...transport-syst`）。
+    """
+    s = _TITLE_QUOTES.sub("", text.strip().lower())
+    # 先把标题拆成原子：单个字母数字 / 单个连字符 / 完整的 uXXXX 转义
+    atoms = [
+        ch if ch.isascii() and ch.isalnum()
+        else "-" if ch.isascii()
+        else f"u{ord(ch):04x}"
+        for ch in s
+    ]
+    kept: list[str] = []
+    used = 0
+    for a in atoms:
+        if used + len(a) > maxlen:
+            break
+        kept.append(a)
+        used += len(a)
+    out = re.sub(r"-+", "-", "".join(kept)).strip("-")
+    if len(kept) < len(atoms) and "-" in out:
+        # 确实被截断了：退到最后一个连字符，别把单词砍一半
+        out = out[: out.rfind("-")].strip("-")
+    return out or "sec"
 
 
 @dataclass

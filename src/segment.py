@@ -25,7 +25,9 @@ from .model import Document, Section, Segment, make_sid, slug
 
 # ⚠️ **改了切分逻辑就必须递增这个版本号**，否则 data/segments.json 会被当成
 #    仍然有效而直接复用（实测就撞过这个坑：改了规则但结果没变，因为读的是旧缓存）。
-SEGMENTER_VERSION = "seg-v13-runinwrap"
+#    v14：slug() 不再把 ASCII 标点转成 uXXXX 码点，也不再切开转义/单词 ——
+#        节路径（sec_path）会变，必须重新分段才能生效。
+SEGMENTER_VERSION = "seg-v14-slug-atomic"
 BODY_MIN_SHARE = 0.15       # 候选字号至少要占这么多字符份额
 
 # ---- 全部改成数据驱动，不再写死字号区间与栏基线 ----

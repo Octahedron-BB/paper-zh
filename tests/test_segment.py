@@ -22,14 +22,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from src.docs import pdf_ids, read_field  # noqa: E402
+from src.model import slug  # noqa: E402
 from src.segment import segment_pdf  # noqa: E402
 
-CASES = [
-    ("s41583-025-00929-y", "neuroscience"),
-    ("s41575-024-00932-1", None),
-    ("s41574-022-00638-x", None),
-    ("vieta2018", None),
-]
 PAPERS = ROOT / "papers"
 BASELINE = Path(__file__).resolve().parent / "segment_baseline.json"
 
@@ -48,7 +44,16 @@ def doc_of(pdf_id: str):
 
 
 def available() -> list[tuple[str, str | None]]:
-    return [(i, f) for i, f in CASES if (PAPERS / f"{i}.pdf").exists()]
+    """测哪些文献：`papers/` 下**全部** PDF（自动发现，按名字排序）。
+
+    ⚠️ 这里以前是一张硬编码的 4 篇清单。后果：新丢进 `papers/` 的 PDF 不会被测到，
+    而"每加一篇新期刊都在裸奔"正是当初写这个测试文件的原因。
+    2026-09-21 处理 s41575-026-01258-w 时才发现它从没被覆盖 —— 而它当时确实
+    带着一个"L1 标题被截断成 interactions"的 bug，测试却全绿。
+
+    学科域从 `data/meta/` 读。本文件的测试目前用不到 field，但保持同一形状。
+    """
+    return [(d, read_field(ROOT, d)) for d in pdf_ids(ROOT)]
 
 
 # ------------------------------------------------------------ 不变量测试
@@ -78,6 +83,54 @@ def test_distinct_headings_do_not_share_sec_path():
                 prev = seen.setdefault(sg.sec_path, sec.heading)
                 assert prev == sec.heading, (
                     f"{pdf_id}: sec_path {sg.sec_path!r} 同时属于 {prev!r} 与 {sec.heading!r}")
+
+
+def test_slug_keeps_ascii_punctuation_out_of_codepoints():
+    """ASCII 标点折叠成连字符，不许变成 `u002e` 这种码点。
+
+    历史问题：`Non-antibiotic drugs.` -> `non-antibiotic-drugsu002e`。
+    实测全仓库 176 处（u002e 108 / u002c 68），节路径、interleave 注释、
+    音频分段目录名一起被污染，而且白吃了 40 字符的截断预算。
+    """
+    assert slug("Non-antibiotic drugs.") == "non-antibiotic-drugs"
+    assert slug("DNA or RNA synthesis.") == "dna-or-rna-synthesis"
+    assert slug("colon,rectal and anal cancer") == "colon-rectal-and-anal-cancer"
+    assert slug("Cell envelope.") == "cell-envelope"
+
+
+def test_slug_truncation_never_splits_an_escape_or_a_word():
+    """截断只能在完整边界发生：不能切出 `u00` 残片，也不能把单词砍一半。
+
+    历史问题：
+      `Industrial and agricultural chemicals.` -> `industrial-and-agricultural-chemicalsu00`
+      `Exploitation of bacterial transport systems.` -> `exploitation-of-bacterial-transport-syst`
+    """
+    a = slug("Industrial and agricultural chemicals.")
+    assert a == "industrial-and-agricultural-chemicals", a
+    assert "u00" not in a
+    b = slug("Exploitation of bacterial transport systems.")
+    assert b == "exploitation-of-bacterial-transport", b
+    assert not b.endswith("-")
+    # 兜底：唯一一个词且超长时，宁可硬截，也绝不能返回空串
+    assert slug("A" * 80) == "a" * 40
+    assert slug("x" * 39 + "-" + "y" * 10) == "x" * 39
+
+
+def test_slug_truncation_counts_escapes_as_atoms():
+    """`uXXXX` 是不可分割的原子：预算放不下就整个丢掉，不许留 `u53` 这种半截。
+
+    ⚠️ 下面每个期望值都是**实测打印**出来的，不是推出来的。
+    （初版这条测试假设"整个 slug 都由转义组成"，一跑就自己失败了。）
+    """
+    assert slug("a" * 34 + "化") == "a" * 34 + "u5316"   # 34 + 5 = 39，放得下
+    assert slug("a" * 35 + "化") == "a" * 35 + "u5316"   # 35 + 5 = 40，刚好放下
+    assert slug("a" * 36 + "化") == "a" * 36             # 41 > 40，整块丢弃
+    assert slug("a" * 37 + "化") == "a" * 37
+    # 全 CJK 输入时每个原子都是 5 字符，所以结果长度必然是 5 的倍数
+    for n in (1, 3, 7, 8, 9, 20):
+        s = slug("化" * n)
+        assert len(s) <= 40 and len(s) % 5 == 0, (n, s)
+    assert slug("化" * 9) == "u5316" * 8
 
 
 def test_every_segment_is_real_text():

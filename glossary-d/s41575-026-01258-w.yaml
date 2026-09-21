@@ -1,0 +1,251 @@
+# 单篇术语表：只对 s41575-026-01258-w 这一篇生效
+#
+# 文献：Drug–microbiome–host interactions: antimicrobial effects of
+#       non-antibiotic compounds（Nature Reviews Gastroenterology & Hepatology）
+#
+# 为什么整篇术语都落在这个文件里：
+#   主表 glossary.yaml 里那 20 条是神经科学那篇（s41583-025-00929-y）的，
+#   本文一条都用不上。按项目规矩"主表保持干净、可跨文献复用"，
+#   所以本文的概念**不往主表塞**，全部写在这里。
+#
+# ---------------------------------------------------------------
+# 两种模式的分工（这决定你改完之后要不要重跑）
+# ---------------------------------------------------------------
+#   hard_replace —— 只做**译后字符串替换**。改它 0 token、立刻生效、不触发重译。
+#                   它**不会**指导模型怎么写，只在译文里做两件事：
+#                     a) 把残留的英文原词换成中文
+#                     b) 把中文变体归一（aliases）
+#                   所以：**能用字符串替换解决的，绝不调 LLM** —— 这类条目请优先用。
+#   prompt_hint  —— 会写进 prompt，**改它会让命中该术语的段落重译**（真花钱）。
+#                   本文 microbiome 类词几乎段段命中，所以只在"必须指导生成"时用，
+#                   典型是缩略语（要定首次出现格式）和近义术语（要区分开）。
+#
+# 下面的 note 只写"模型容易踩的坑"，不是教科书定义。
+# 所有译法都是**建议值，待你审核**（status 默认 suggested）；你的习惯优先于任何"标准译法"。
+#
+# ⚠️ 已实测的坑（别重犯）：想用 `菌群` 当 microbiome 的 alias 把「菌群」统一掉，
+#    但中文译文里 3 处「菌群」有 2 处其实是「细菌群落」的**子串**（细菌群落 = bacterial
+#    community，是另一个意思）—— 直接替换会得到「细菌微生物组」这种错词，而且不报错。
+#    （剩下那 1 处才是真正的 microbiome 语境，为它去冒毁掉 2 处的风险不值得。）
+#    **结论：别名要写整段词组，不要写短子串。** 这也是下面 aliases 都偏长的原因。
+#
+# 下面 note 里的数字口径：除非特别说明，都是**中文译文里的出现次数**（不是英文原文，
+# 也不是原始 JSON 文本 —— 后者同时含 src/zh/zh_raw，会把数字虚高一倍）。
+
+terms:
+  # ============================================================
+  # 一、缩略语（prompt_hint：必须在生成时定格式）
+  #     ⚠️ 大写缩写是「同名异义」高发区，只在本文件定义，不要写进主表
+  # ============================================================
+  - term: NAA
+    zh: 非抗生素抗菌剂
+    mode: prompt_hint
+    full_en: non-antibiotic antimicrobial
+    scope: doc:s41575-026-01258-w
+    note: "本文核心缩写（正文出现 52 次）。首次出现写「非抗生素抗菌剂（NAAs）」，其后一律保留缩写 NAAs，不要反复展开成中文。⚠️ 它**不等于** non-antibiotic drugs：NAA 强调「确有抗菌活性」，non-antibiotic drugs 只是「不是抗生素的药物」这个更宽泛的范畴，本文正是靠这个区别立论。不要译成「非抗生素抗菌药物」。"
+
+  - term: SCFA
+    zh: 短链脂肪酸
+    mode: prompt_hint
+    full_en: short-chain fatty acid
+    scope: doc:s41575-026-01258-w
+    note: "保留缩写 SCFAs（正文 SCFAs 4 次 / SCFA 3 次）。首次出现写「短链脂肪酸（SCFAs）」，其后保留缩写。"
+
+  - term: PFAS
+    zh: 全氟和多氟烷基物质
+    mode: prompt_hint
+    full_en: per- and polyfluoroalkyl substances
+    scope: doc:s41575-026-01258-w
+    note: "**永远不要展开成中文**（中文名太长，读者靠缩写认它）。本文出现在环境污染物语境。"
+
+  - term: NSAID
+    zh: 非甾体抗炎药
+    mode: prompt_hint
+    full_en: non-steroidal anti-inflammatory drug
+    scope: doc:s41575-026-01258-w
+    note: "保留缩写 NSAIDs。不要写成「非类固醇抗炎药」。"
+
+  - term: EPSPS
+    zh: EPSPS
+    mode: prompt_hint
+    full_en: 5-enolpyruvylshikimate-3-phosphate synthase
+    scope: doc:s41575-026-01258-w
+    note: "草甘膦的靶酶。中文名（5-烯醇丙酮酰莽草酸-3-磷酸合酶）太长，**保留英文缩写**，首次出现可括注一次中文全称，其后只用 EPSPS。"
+
+  - term: SHIME
+    zh: SHIME
+    mode: prompt_hint
+    full_en: Simulator of the Human Intestinal Microbial Ecosystem
+    scope: doc:s41575-026-01258-w
+    note: "体外肠道模型专名，**整体保留英文**，首次出现补一句「体外模拟人体肠道微生物生态系统的模型」即可，不要音译。"
+
+  # ============================================================
+  # 二、近义术语（prompt_hint：必须在生成时区分，否则读者会混）
+  # ============================================================
+  - term: non-antibiotic compound
+    zh: 非抗生素化合物
+    mode: prompt_hint
+    scope: doc:s41575-026-01258-w
+    note: "本文最上位的中性说法（正文 50+ 处），涵盖药物、膳食物质、农用/工业化学品。与下面三个概念区分：non-antibiotic drug（非抗生素药物，只指药）、NAA（非抗生素抗菌剂，强调已证实有抗菌活性）、xenobiotic（异生物质，强调「外来化学物质」这一属性）。"
+
+  - term: non-antibiotic drug
+    zh: 非抗生素药物
+    mode: prompt_hint
+    scope: doc:s41575-026-01258-w
+    note: "只指药物，不涵盖膳食/工业化合物。不要与 NAA 混用（见 NAA 条），也不要写成「非抗菌药物」。"
+
+  - term: antimicrobial resistance
+    zh: 抗菌药物耐药性
+    mode: prompt_hint
+    scope: doc:s41575-026-01258-w
+    note: "比 antibiotic resistance 范围大：本文的论点是**非抗生素**化合物也能推动耐药，所以凡涉及非抗生素造成的耐药，必须用「抗菌药物耐药性」，不要图省事写成「抗生素耐药性」。"
+
+  - term: antibiotic resistance
+    zh: 抗生素耐药性
+    mode: prompt_hint
+    scope: doc:s41575-026-01258-w
+    note: "只在明确指抗生素本身造成的耐药时使用。与 antimicrobial resistance 严格区分（见上一条）。"
+
+  - term: microbial community
+    zh: 微生物群落
+    mode: prompt_hint
+    scope: doc:s41575-026-01258-w
+    note: "指「一群微生物」这个集合，与 microbiome（微生物组，含基因组与代谢功能）不是一回事。本文两者都高频且常在同一段出现，务必区分。⚠️ 不要把 microbiome 译成「微生物群落」。"
+
+  - term: molecular mimicry
+    zh: 分子模拟
+    mode: prompt_hint
+    scope: doc:s41575-026-01258-w
+    note: "指非抗生素化合物与微生物天然底物/辅因子结构相似。⚠️ 英文出现 2 处（含小节标题「Molecular mimicry of substrates or cofactors」），但中文译文里「分子模拟」「拟态」「模仿」均为 **0 处** —— 模型把它改写成描述性句子了，术语本身没落地。这是本文件里最需要你复核的一条。"
+
+  # ============================================================
+  # 三、归一与清残留（hard_replace：零成本、立刻生效，优先用这类）
+  # ============================================================
+  - term: xenobiotic
+    zh: 异生物质
+    mode: hard_replace
+    aliases: ["外源物质", "外源性物质", "异源物质"]
+    scope: doc:s41575-026-01258-w
+    note: "实测现有译文混用：异生物质 5 处 / 外源物质 3 处。这里统一到「异生物质」（更贴近 xenobiotic 的原义，且摘要用的是它）。不同意就直接改这一条的 zh，改完重跑 --stage translate 即可（0 token、不调 LLM）。"
+
+  - term: gut microbiome
+    zh: 肠道微生物组
+    mode: hard_replace
+    aliases: ["肠道微生物群", "肠道菌群", "肠道微生态"]
+    scope: doc:s41575-026-01258-w
+    note: "实测「肠道微生物群」1 处，统一成「肠道微生物组」（现有译文里「肠道微生物组」26 处、「微生物组」85 处，是压倒性用法）。"
+
+  - term: microbiome
+    zh: 微生物组
+    mode: hard_replace
+    scope: doc:s41575-026-01258-w
+    note: "刻意**不给 aliases**：想把「菌群」当别名统一掉，会连带毁掉「细菌群落」（中文译文里 3 处「菌群」有 2 处是它的子串，见文件头部的实测说明）。这条只负责把残留的英文 microbiome 换成中文。"
+
+  - term: H2S
+    zh: 硫化氢
+    mode: hard_replace
+    full_en: hydrogen sulfide
+    prefix_variants: false
+    scope: doc:s41575-026-01258-w
+    note: "实测中文译文里 1 处 H2S 是**英文原样残留**（「硫化氢」0 处），而且 TTS 会把 H2S 念得很难听（「埃曲二艾斯」）。改成中文对阅读和听觉都是净收益。prefix_variants 必须是 false —— H2S 不是「方位前缀+缩写」那种结构，开着会误伤。"
+
+  - term: endobiotic
+    zh: 内源性物质
+    mode: hard_replace
+    aliases: ["内生物质", "内源物质"]
+    scope: doc:s41575-026-01258-w
+    note: "⚠️ 更正：这个词的 2 处出现是在**英文原文**里，中文译文并没有英文残留（用的就是「内源性物质」3 处），所以这条不改现有效果。保留它的价值在于：① 把「内生物质/内源物质」这类变体归一；② 万一以后重译时模型留下英文，能自动收拾。指宿主自身产生、被微生物（β-葡萄糖醒酸苷酶）重新激活的物质，与 xenobiotic（异生物质）正好相对，别混。"
+
+  - term: efflux pump
+    zh: 外排泵
+    mode: hard_replace
+    aliases: ["外流泵", "泵出泵"]
+    scope: doc:s41575-026-01258-w
+
+  - term: efflux
+    zh: 外排
+    mode: hard_replace
+    scope: doc:s41575-026-01258-w
+    note: "放在 efflux pump 后面，靠条目顺序先长后短，避免把 efflux pump 拆成「外排 pump」。"
+
+  - term: bioaccumulation
+    zh: 生物累积
+    mode: hard_replace
+    aliases: ["生物积累", "生物蓄积"]
+    scope: doc:s41575-026-01258-w
+    note: "本文的高频机制词（中文译文 9 处；英文 bioaccumulation/bioaccumulate 共 18 处）。与 biotransformation（生物转化，中文 6 处）成对出现，是微生物影响药物的两条并列途径，不要合并。"
+
+  - term: biotransformation
+    zh: 生物转化
+    mode: hard_replace
+    scope: doc:s41575-026-01258-w
+
+  - term: horizontal gene transfer
+    zh: 水平基因转移
+    mode: hard_replace
+    aliases: ["横向基因转移", "水平基因传递"]
+    scope: doc:s41575-026-01258-w
+
+  - term: colonization resistance
+    zh: 定植抵抗
+    mode: hard_replace
+    aliases: ["定殖抵抗", "定植抗力", "定植抗性"]
+    scope: doc:s41575-026-01258-w
+    note: "指正常菌群挡住外来病原体定植的能力。实测中文译文用的是「定植抵抗」（3 处），保留。"
+
+  - term: pathobiont
+    zh: 致病共生菌
+    mode: hard_replace
+    aliases: ["致病共栖菌", "病理性共生菌", "条件致病共生菌"]
+    scope: doc:s41575-026-01258-w
+    note: "指平时共栖、条件变化时才致病的菌（不是「病原体」）。该节标题是「Intestinal pathobiont load」，译作「肠道致病共生菌负荷」。"
+
+  - term: cell envelope
+    zh: 细胞被膜
+    mode: hard_replace
+    aliases: ["细胞包膜", "细胞外被"]
+    scope: doc:s41575-026-01258-w
+    note: "细菌的细胞被膜 = 细胞膜 + 细胞壁 + 外层结构的总称。⚠️ 不要译成「细胞膜」或「细胞壁」，本文专门讲 NAAs 打这个结构。"
+
+  - term: selective pressure
+    zh: 选择压力
+    mode: hard_replace
+    aliases: ["选择性压力", "选择压"]
+    scope: doc:s41575-026-01258-w
+
+  - term: opportunistic pathogen
+    zh: 机会性病原体
+    mode: hard_replace
+    aliases: ["条件致病菌", "机会致病菌", "机会病原体"]
+    scope: doc:s41575-026-01258-w
+
+  - term: terminal ileum
+    zh: 末端回肠
+    mode: hard_replace
+    aliases: ["回肠末端"]
+    scope: doc:s41575-026-01258-w
+    note: "与 colon（结肠）并列出现，是 NAAs 浓度估算的关键部位。两个中文写法都对，这里择一定死，免得同篇一会儿一个。"
+
+  - term: germ-free mice
+    zh: 无菌小鼠
+    mode: hard_replace
+    aliases: ["无菌级小鼠", "无菌鼠"]
+    scope: doc:s41575-026-01258-w
+
+  - term: pharmacoecology
+    zh: 药物生态学
+    mode: hard_replace
+    scope: doc:s41575-026-01258-w
+    note: "本文用于立论的自造领域词（药物对微生物的影响）。⚠️ 不要与下面那条混：药代/药效方向才是「药物微生物组学」。"
+
+  - term: pharmacomicrobiomics
+    zh: 药物微生物组学
+    mode: hard_replace
+    scope: doc:s41575-026-01258-w
+    note: "方向与 pharmacoecology 相反：这里研究的是**微生物**如何影响药物的药代动力学、药效、毒性与疗效。本文明确说这一方向「已在其他文献中综述」，所以只提一句即可，不展开。"
+
+  - term: high-throughput
+    zh: 高通量
+    mode: hard_replace
+    aliases: ["高通过量", "高通量筛选技术"]
+    scope: doc:s41575-026-01258-w

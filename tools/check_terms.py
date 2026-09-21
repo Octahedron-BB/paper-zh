@@ -3,8 +3,8 @@
 回答用户的问题：**同一个词/缩写在不同文章意思不同，怎么处理？**
 
 用法：
-  & python tools\\check_terms.py                      # 默认那篇神经科学综述
-  & python tools\\check_terms.py --doc-id s41575-024-00932-1
+  python tools/check_terms.py                              # 自动挑（多篇会报错）
+  python tools/check_terms.py --doc-id s41575-024-00932-1
 """
 
 from __future__ import annotations
@@ -19,14 +19,18 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from src.docs import read_field, resolve_doc_id  # noqa: E402
 from src.abbrev import audit, conflict_report, extract_definitions  # noqa: E402
 from src.glossary import (  # noqa: E402
     Term, TermConflictError, load_glossary, load_glossary_dir, resolve_terms,
 )
 
-DOC_ID = "s41583-025-00929-y"
-FIELD = "neuroscience"
 GLOSSARY = ROOT / "glossary.yaml"
+# 下面第 [4] 段演示用的常量（演示"同名异义"如何被 doc 级作用域裁决），
+# 与真实待检文档无关。⚠️ 以前 DOC_ID/FIELD 兼任 --doc-id 的默认值，
+# 不带参数跑就会静默审计另一篇文献；现在 --doc-id 走 resolve_doc_id()。
+DEMO_DOC_ID = "s41583-025-00929-y"
+DEMO_FIELD = "neuroscience"
 
 def _seg_json(doc_id: str) -> Path:
     return ROOT / "data" / "segments" / f"{doc_id}.json"
@@ -71,12 +75,14 @@ def prose_text(doc_id: str) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="缩写消歧 / 同名异义审计")
-    ap.add_argument("--doc-id", default=DOC_ID)
+    ap.add_argument("--doc-id", default=None,
+                    help="文档 ID（省略时自动挑；有多个会报错）")
     ap.add_argument("--field", default=None,
-                    help="学科域，如 neuroscience；不传则 field 级术语不生效")
+                    help="学科域，如 neuroscience；不传则从 data/meta/ 读，读不到就只有 global 级生效")
     ap.add_argument("--top", type=int, default=30)
     args = ap.parse_args()
-    doc_id, field = args.doc_id, args.field
+    doc_id = resolve_doc_id(ROOT, args.doc_id, stage="segments")
+    field = args.field or read_field(ROOT, doc_id)
 
     prose = prose_text(doc_id)
     if not prose.strip():
@@ -140,9 +146,9 @@ def main() -> None:
         Term("MSN", "中型棘状神经元", "hard_replace", scope="global",
              note="假设的全局译法"),
         # 但本文的 MSN 是 medial septal nucleus -> 用 doc 级覆盖
-        Term("MSN", "内侧隔核", "hard_replace", scope=f"doc:{DOC_ID}"),
+        Term("MSN", "内侧隔核", "hard_replace", scope=f"doc:{DEMO_DOC_ID}"),
     ]
-    eff, conf = resolve_terms(demo, doc_id=DOC_ID, field="neuroscience", strict=False)
+    eff, conf = resolve_terms(demo, doc_id=DEMO_DOC_ID, field=DEMO_FIELD, strict=False)
     for t in eff:
         print(f"    生效: MSN -> 「{t.zh}」  (来自 scope={t.scope})")
     print("    => 就近优先：doc > field > global，**主表保持干净、可跨文献复用**")
@@ -151,7 +157,7 @@ def main() -> None:
     bad = [Term("MSN", "中型棘状神经元", "hard_replace", scope="global"),
            Term("MSN", "内侧隔核", "hard_replace", scope="global")]
     try:
-        resolve_terms(bad, doc_id=DOC_ID, field="neuroscience", strict=True)
+        resolve_terms(bad, doc_id=DEMO_DOC_ID, field=DEMO_FIELD, strict=True)
         print("    ❌ 同级冲突竟然没被拦住")
     except TermConflictError as e:
         print("\n    ✅ 同级冲突被拦下（避免静默用错译法）：")

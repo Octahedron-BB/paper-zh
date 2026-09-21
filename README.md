@@ -125,27 +125,38 @@ paper-zh/
 │   ├─ build_reader.py        # 自包含 Web Reader HTML 打包器
 │   ├─ build_interleave.py    # 中英交错对照生成器
 │   ├─ qa_report.py           # 自动化翻译与讲稿质量体检报告
-│   └─ check_terms.py         # 术语命中与缩写冲突审计工具
+│   ├─ check_terms.py         # 术语命中与缩写冲突审计工具
+│   ├─ disambiguate.py        # 同名异义缩写消歧（把提议写入 glossary-d/）
+│   └─ batch_segment.py       # 批量分段健康度检查
 │
 ├─ src/                       # 核心业务模块
+│   ├─ docs.py                # ★ 文档自动发现（papers/ 与各产物目录里有哪些文献）
 │   ├─ feed.py                # 文献速览：PubMed 增量检索与状态库
 │   ├─ push.py                # 推送渠道（PushPlus / Telegram / Discord）
-│   ├─ polyphone.py           # 多音字发音清洗与正则转换
-│   ├─ textnorm.py            # 中文排版规范化与数字千分位处理
-│   ├─ prompts.py             # 提示词模板与版本控制器
+│   ├─ runlog.py              # 工具自记日志（定时任务无需 shell 重定向）
+│   ├─ model.py               # 文档/节/段数据结构与 slug（节路径）规则
 │   ├─ segment.py             # PDF 版式分析与多栏提取算法
 │   ├─ translate.py           # 轨A 翻译执行器
 │   ├─ rewrite.py             # 轨B 讲稿重写执行器
-│   └─ glossary.py            # 术语解析与作用域分发引擎
+│   ├─ glossary.py            # 术语解析与作用域分发引擎
+│   ├─ abbrev.py              # 缩写抽取、定义识别与同名异义检测
+│   ├─ polyphone.py           # 多音字发音清洗与正则转换
+│   ├─ textnorm.py            # 中文排版规范化与数字千分位处理
+│   ├─ prompts.py             # 提示词模板与版本控制器
+│   ├─ providers.py           # LLM 供应商抽象（仅用标准库 urllib，零 SDK 依赖）
+│   └─ cache.py               # 段级缓存键与存取
 │
 ├─ devtools/                  # 开发者排错工具
-│   └─ inspect_lines.py       # PDF 文本行级版式判定探针
+│   ├─ inspect_lines.py       # PDF 文本行级版式判定探针
+│   ├─ audit_hard_landing.py  # hard_replace 术语到底有没有落地（打印替代写法证据）
+│   └─ audit_term_density.py  # hard_replace 译名是否把译文“刷”得太啰嗦
 │
-└─ tests/                     # 离线自动化测试套件
+└─ tests/                     # 离线自动化测试套件（样本自动发现）
     ├─ test_core.py           # 核心测试（术语表 / 缓存 / 多音字 / 缩写处理）
     ├─ test_digest.py         # 文献速览测试（快照选取 / 计长口径 / doc_id 推导）
     ├─ test_push.py           # 推送层测试（渠道选择 / 分片边界 / 不泄漏密钥）
-    └─ test_segment.py        # 分段不变量与结构完整性测试
+    ├─ test_segment.py        # 分段不变量、节路径（slug）规范
+    └─ segment_baseline.json  # 分段基准数字（用 test_segment.py --update 刷新）
 ```
 
 ---
@@ -190,6 +201,16 @@ paper-zh/
 ```
 > **解析规则**：优先级为 `doc` > `field` > `global`。同级若出现冲突将报错中断，避免静默混淆。
 
+> **写 `aliases` 的规则：别名必须是完整词组，不要用短子串。**
+> 别名是确定性字符串替换，子串会连带误伤包含它的其它词，**而且不会报错** ——
+> 例如用「菌群」作 `microbiome` 的别名，会一并破坏「细菌群落」
+> （bacterial community，另一个概念）。拿不准就写整段词组。
+>
+> **模式选择规则：能用 `hard_replace` 解决的，绝不调 LLM。**
+> `hard_replace` 零成本、改完立即生效；`prompt_hint` 会让命中该词的段落重译。
+> 因此只有“必须指导模型怎么写”的才用 `prompt_hint` ——
+> 典型是缩略语的首次出现格式、以及需要彼此区分的近义术语。
+
 ---
 
 ### 2. 多音字与专业发音清洗
@@ -220,14 +241,30 @@ rules:
 
 ```bash
 # 1. 运行六项质量体检（词比/讲稿保全率/未译残留/数字保真/术语落地/提示词泄漏）
-python tools/qa_report.py
+python tools/qa_report.py                    # 默认体检全部已翻译文献
+python tools/qa_report.py --doc vieta2018    # 只看指定文献
 
 # 2. 运行离线单元测试套件（无需 API 密钥）
-python tests/test_core.py       # 19/19 项测试：术语作用域、多音字映射、缩写清洗、段级缓存
-python tests/test_segment.py    # 8/8 项测试：PDF 分段解析结构不变量
-python tests/test_digest.py     # 12/12 项测试：快照选取、提要计长口径、doc_id 推导
-python tests/test_push.py       # 14/14 项测试：渠道选择、分片边界、密钥不泄露
+python tests/test_core.py       # 术语作用域、多音字映射、缩写清洗、段级缓存
+python tests/test_segment.py    # PDF 分段结构不变量、节路径（slug）规范
+python tests/test_digest.py     # 快照选取、提要计长口径、doc_id 推导
+python tests/test_push.py       # 渠道选择、分片边界、密钥不泄露
 ```
+
+**测试样本与体检对象都是自动发现的**：`test_segment.py` 扫 `papers/*.pdf`，
+`qa_report.py` 扫 `data/translation/`，两处共用 `src/docs.py`。
+因此**新丢一篇 PDF 进去就会被自动纳入，不需要维护任何清单**。
+
+`test_segment.py` 会与 `tests/segment_baseline.json` 里的基准数字比对，
+新增 PDF 或改动分段逻辑后基准会不匹配：
+
+```bash
+python tests/test_segment.py --update    # 刷新基准（仅在确认改动是你想要的之后）
+```
+
+> ℹ️ **分段器的已知局限**：期刊标题若因排版折成两行，分段器目前**只取末行**，
+> 标题会被截断（表现为标题以小写单词开头）。
+> `test_segment.py::test_headings_are_not_truncated` 专盯此类问题。
 
 ---
 
@@ -400,6 +437,12 @@ PDF 存成 : s41583-025-00929-y.pdf  ->  放进 papers/
 **Q：修改了术语表或多音字表后如何重新生成？**
 - 若修改了 `glossary.yaml` 中的 `hard_replace` 术语：直接运行 `python tools/run_pipeline.py --pdf <id> --stage translate`（0 API 开销）。
 - 若修改了 `polyphone.yaml` 发音词典：直接运行 `python tools/run_pipeline.py --pdf <id> --stage audio` 重新合成音频。
+
+**Q：`--doc-id` / `--pdf` 必须传吗？**
+`papers/` 下只有一篇文献时可以省略，工具会自动选中它；有多篇时**必须显式指定**，
+否则会报错并列出全部候选。漏传或传错都不会静默跑错文档 —— 工具宁可报错，也不会猜。
+候选文献与学科域由 `src/docs.py` 统一发现（`papers/` 下的 PDF、各产物目录里的 doc_id、
+`data/meta/<doc_id>.json` 里的 field），无需维护任何清单。
 
 ---
 

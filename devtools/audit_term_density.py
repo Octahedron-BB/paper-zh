@@ -13,15 +13,11 @@ from pathlib import Path
 sys.path.insert(0, ".")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from src.docs import processed_docs  # noqa: E402
 from src.glossary import MODE_HARD, load_glossary_dir  # noqa: E402
 
 ROOT = Path(".")
-FIELDS = {
-    "s41583-025-00929-y": "neuroscience",
-    "s41575-024-00932-1": None,
-    "s41574-022-00638-x": None,
-    "vieta2018": None,
-}
+# ⚠️ 这里以前是一张硬编码的 4 篇清单 —— 新处理的文献不会被体检到。
 # 什么算"可能啰嗦"：译名偏长，或自带括号解释
 def suspicious(zh: str) -> str:
     if "（" in zh or "(" in zh:
@@ -31,7 +27,7 @@ def suspicious(zh: str) -> str:
     return ""
 
 
-for doc, field in FIELDS.items():
+for doc, field in processed_docs(ROOT, stage="translation"):
     p = ROOT / "data" / "translation" / f"{doc}.json"
     if not p.exists():
         continue
