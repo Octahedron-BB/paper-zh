@@ -3,14 +3,14 @@
 这是**第三个渲染器**：`build_digest.py` 产出结构化快照，本脚本只负责把快照变成各渠道的消息。
 独立成脚本而不是塞进 build_digest，是为了"只想重发一次"时**不必重新检索、更不必重新调 LLM**。
 
-跑法
+跑法（假设 Python 环境已激活；Windows / macOS 通用）
 ----
-    & "E:\\Anaconda\\envs\\workenv\\python.exe" tools\\push_digest.py --list-channels
-    ... tools\\push_digest.py --channels all --dry-run      # 先看会发什么，不发
-    ... tools\\push_digest.py --channels telegram
-    ... tools\\push_digest.py --channels telegram,discord  # 多选
-    ... tools\\push_digest.py --channels wechat --limit 10
-    ... tools\\push_digest.py --channels discord --from 2026-09-21-0852
+    python tools/push_digest.py --list-channels
+    python tools/push_digest.py --channels all --dry-run      # 先看会发什么，不发
+    python tools/push_digest.py --channels telegram
+    python tools/push_digest.py --channels telegram,discord   # 多选
+    python tools/push_digest.py --channels wechat --limit 10
+    python tools/push_digest.py --channels discord --from 2026-09-21-0852
 
 渠道配置写在项目根目录的 `.env`（已被 .gitignore 忽略），见 `.env.example`。
 """
@@ -30,6 +30,7 @@ from src.push import (  # noqa: E402
     CHANNELS, DISPLAY, PushError, build_messages, channel_status, push_snapshot,
     recent_items, resolve_channels,
 )
+from src.runlog import attach as attach_log  # noqa: E402
 from tools.build_digest import load_snapshot  # noqa: E402
 
 
@@ -49,7 +50,14 @@ def main() -> int:
                     help="打印出会发什么，但什么都不发")
     ap.add_argument("--list-channels", action="store_true",
                     help="列出渠道与配置状态，然后退出")
+    ap.add_argument("--no-log", action="store_true",
+                    help="不写运行日志（默认会同时写 data/feed/run-log.txt）")
     args = ap.parse_args()
+
+    if not args.no_log:
+        log = attach_log(ROOT / "data" / "feed" / "run-log.txt", sys.argv[1:])
+        if log:
+            print(f"[日志] {log.relative_to(ROOT)}")
 
     load_env(ROOT / ".env")
 

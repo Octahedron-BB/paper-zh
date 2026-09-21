@@ -15,15 +15,15 @@
 `--pick 3` 里的"3"是**位置编号**，离开快照就没有意义。所以每期必须落盘，
 否则过两天再 picking 就会指到别的条目上——这是那种不会报错、只会让你跑错文献的静默错误。
 
-跑法
+跑法（假设 Python 环境已激活；Windows / macOS 通用）
 ----
-    & "E:\\Anaconda\\envs\\workenv\\python.exe" tools\\build_digest.py            # 增量
-    ... tools\\build_digest.py --days 60                                        # 首次回填
-    ... tools\\build_digest.py --limit 3 --no-llm                               # 只看体量、不花钱
-    ... tools\\build_digest.py --pick 3 7                                       # 挑中第 3、7 条
-    ... tools\\build_digest.py --list                                           # 终端重看最近一期
-    ... tools\\build_digest.py --render-only                                    # 用快照重渲染（不调 LLM）
-    ... tools\\build_digest.py --push telegram,discord                          # 生成后直接推送
+    python tools/build_digest.py                  # 增量
+    python tools/build_digest.py --days 60        # 首次回填
+    python tools/build_digest.py --limit 3 --no-llm       # 只看体量、不花钱
+    python tools/build_digest.py --pick 3 7       # 挑中第 3、7 条
+    python tools/build_digest.py --list           # 终端重看最近一期
+    python tools/build_digest.py --render-only    # 用快照重渲染（不调 LLM）
+    python tools/build_digest.py --push telegram,discord  # 生成后直接推送
 
 推送的详细用法见 `tools/push_digest.py`（只想重发一次时用它，不必重新检索）。
 """
@@ -46,8 +46,8 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from src.cache import Cache, key_for_digest  # noqa: E402
 from src.feed import (  # noqa: E402
     DEFAULT_DAYS, DEFAULT_TERM, STATUS_PICKED, STATUS_SHOWN,
-    FeedItem, gap_days, load_store, pending, retrieve, save_store, set_status,
-    stats, upsert,
+    FeedItem, gap_days, load_store, pending, retrieve, save_generations,
+    save_store, set_status, stats, upsert,
 )
 from src.glossary import (  # noqa: E402
     TermConflictError, apply_hard_replace, load_glossary, load_glossary_dir,
@@ -56,6 +56,7 @@ from src.model import sha1  # noqa: E402
 from src.prompts import DIGEST_SYSTEM, DIGEST_USER, DIGEST_VERSION  # noqa: E402
 from src.providers import build_provider, load_env  # noqa: E402
 from src.push import PushError, push_snapshot, resolve_channels  # noqa: E402
+from src.runlog import attach as attach_log  # noqa: E402
 from src.textnorm import normalize_zh, reading_len  # noqa: E402
 
 OUT_DIR = ROOT / "data" / "feed" / "digest"
@@ -522,9 +523,12 @@ def cmd_build(args: argparse.Namespace) -> int:
         "items": snapshot_items(todo),
     }
     paths = write_snapshot(snap, stem)
+    # ⚠️ 必须先把生成物写回状态库：`todo` 里是副本，`triage` 改的就是这些副本，
+    #    不写回的话 brief/detail 只会留在快照里，状态库那一栏永远是空的。
+    saved = save_generations(store, todo)
     n = set_status(store, [i.pmid for i in todo], STATUS_SHOWN, shown_in=stem)
     save_store(store)
-    print(f"[标记] {n} 条置为 shown（下次不会再推）")
+    print(f"[落库] {saved} 条的提要已写回状态库；{n} 条置为 shown（下次不会再推）")
 
     print("\n" + "=" * 70)
     for k, p in paths.items():
@@ -638,7 +642,16 @@ def main() -> int:
                     help="用已有快照重新渲染 HTML/MD（不检索、不调 LLM）")
     ap.add_argument("--push", default="", metavar="LIST",
                     help="生成后直接推送：如 --push telegram,discord 或 --push all")
+    ap.add_argument("--no-log", action="store_true",
+                    help="不写运行日志（默认会同时写 data/feed/run-log.txt）")
     args = ap.parse_args()
+
+    # 自写运行日志：定时任务里就**不需要**用 cmd.exe 包一层做重定向，
+    # 于是任务参数可以全是相对路径（见 src/runlog.py 里的详细说明）。
+    if not args.no_log:
+        log = attach_log(ROOT / "data" / "feed" / "run-log.txt", sys.argv[1:])
+        if log:
+            print(f"[日志] {log.relative_to(ROOT)}")
 
     if args.render_only:
         return cmd_render(args)

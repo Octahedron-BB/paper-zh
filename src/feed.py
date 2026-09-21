@@ -367,6 +367,24 @@ def upsert(store: dict[str, dict[str, Any]], items: list[FeedItem]) -> list[Feed
     return fresh
 
 
+def save_generations(store: dict[str, dict[str, Any]], items: list[FeedItem]) -> int:
+    """把生成物（`title_zh` / `brief` / `detail`）写回状态库。
+
+    ⚠️ **必须有这一步。** `pending()` 返回的是 `FeedItem.from_dict(...)` 造出来的**副本**，
+    `triage` 改的是那些副本；不写回的话，生成的提要在落盘时就被丢掉了 ——
+    只存在于快照里，而 `upsert` 里"保留本地生成物"那段合并逻辑也永远用不上。
+    症状很隐蔽：一切看似正常（快照里提要好端端的），只是状态库那一栏永远是空的。
+    """
+    n = 0
+    for it in items:
+        d = store.get(it.pmid)
+        if d is None:
+            continue
+        d["title_zh"], d["brief"], d["detail"] = it.title_zh, it.brief, it.detail
+        n += 1
+    return n
+
+
 def pending(store: dict[str, dict[str, Any]]) -> list[FeedItem]:
     """状态库里所有还没进入过任何一期 digest 的条目，最新在前。"""
     out = [FeedItem.from_dict(d) for d in store.values()

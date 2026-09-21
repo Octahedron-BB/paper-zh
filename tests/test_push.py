@@ -5,8 +5,8 @@
   2. 分片不得超出渠道上限，也不得把一条提要切成两半；
   3. **输出里绝不能出现密钥的值**（只允许出现变量名）。
 
-跑法：
-    & "E:\\Anaconda\\envs\\workenv\\python.exe" tests\\test_push.py
+跑法（假设 Python 环境已激活；Windows / macOS 通用）：
+    python tests/test_push.py
 """
 
 from __future__ import annotations

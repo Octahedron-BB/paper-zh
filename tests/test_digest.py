@@ -5,8 +5,8 @@
 "手机上看到的是 A 期，电脑上 --pick 3 却指到 B 期的第 3 条"，
 中间没有任何报错，只会安静地跑错一篇文献。
 
-跑法：
-    & "E:\\Anaconda\\envs\\workenv\\python.exe" tests\\test_digest.py
+跑法（假设 Python 环境已激活；Windows / macOS 通用）：
+    python tests/test_digest.py
 """
 
 from __future__ import annotations
@@ -190,6 +190,68 @@ def test_upsert_preserves_local_state_and_generations():
     assert store["1"]["brief"] == "已生成的提要", "已生成的提要被冲掉了"
     assert store["1"]["title_zh"] == "已生成的标题"
     assert store["1"]["title_en"] == "更新后的标题", "PubMed 侧的事实应当更新"
+
+
+def test_pending_returns_copies_so_generations_must_be_written_back():
+    """⚠️ 回归：`pending()` 返回的是**副本**，生成物必须显式写回状态库。
+
+    不写回的症状极隐蔽：快照里提要好端端的，只是状态库那一栏永远是空的 ——
+    不报错，而且要到"想把某条改回 new 重推"时才会发现。
+    """
+    from src.feed import pending, save_generations
+    store: dict = {}
+    upsert(store, [_item()])
+    pend = pending(store)
+    assert pend, "应有 1 条待推"
+    pend[0].brief = "生成的提要"
+    pend[0].title_zh = "生成的标题"
+    assert store["1"]["brief"] == "", "此刻状态库还不该有 brief（证明 pending 给的是副本）"
+    assert save_generations(store, pend) == 1
+    assert store["1"]["brief"] == "生成的提要"
+    assert store["1"]["title_zh"] == "生成的标题"
+    # 状态不能因为写回生成物而被改掉
+    assert store["1"]["status"] == "new"
+
+
+def test_runlog_tees_output_and_rotates():
+    """运行日志必须同时写控制台与文件，并在超限时轮转。
+
+    它是"定时任务到底做了什么"的**唯一**证据来源：任务计划里拿不到 stdout，
+    `LastTaskResult` 只能说明"进程正常结束"，不说明它推了几条还是什么都没推。
+    """
+    import src.runlog as rl
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "run-log.txt"
+        try:
+            rl.detach()
+            assert rl.attach(p, ["--self-test"]) == p and p.exists(), "日志文件应被创建"
+            print("测试输出-hello-log")
+            sys.stdout.flush()
+            body = p.read_text(encoding="utf-8")
+            assert "--self-test" in body, "应记录命令行参数"
+            assert "测试输出-hello-log" in body, "print 的输出应进日志"
+
+            rl.detach()                       # 超限轮转
+            p.write_text("x" * (rl.MAX_BYTES + 1), encoding="utf-8")
+            rl.attach(p, ["--again"])
+            assert (Path(td) / "run-log.1.txt").exists(), "超限时应轮转为 .1.txt"
+            assert p.exists() and p.stat().st_size < rl.MAX_BYTES, "轮转后应是新文件"
+        finally:
+            rl.detach()
+
+
+def test_runlog_never_breaks_the_run_when_path_is_unwritable():
+    """日志写不了**不该**把主流程拖死 —— 定时任务里这会导致整周静默不推。"""
+    import src.runlog as rl
+    try:
+        rl.detach()
+        # Windows 上文件名里的 ':' 非法；父目录是文件（不是目录）也能稳定失败
+        with tempfile.NamedTemporaryFile() as f:
+            bad = Path(f.name) / "sub" / "run-log.txt"
+            assert rl.attach(bad, ["--x"]) is None, "写不了应返回 None 而不是抛异常"
+            print("仍然要能正常输出")
+    finally:
+        rl.detach()
 
 
 def test_store_roundtrip_is_atomic_and_readable(tmpdir: str | None = None):
