@@ -58,6 +58,10 @@ temp/
 # 5. 输入文件：原文 PDF（版权原因，严禁提交）
 papers/*.pdf
 papers/*.PDF
+# ⚠️ 必须递归匹配：`papers/*.pdf` 只管**直接子文件**，
+#    `papers/inbox/` 里手工下载的 PDF 不会被忽略，一个 `git add -A` 就会把原文提交上去。
+papers/**/*.pdf
+papers/**/*.PDF
 !papers/.gitkeep
 
 # 6. 产物数据：全部由原文派生，一律不提交到公共仓库

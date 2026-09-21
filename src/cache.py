@@ -120,6 +120,22 @@ def key_for_script(*, model_id: str, prompt_version: str, translated: str,
                     hashlib.sha1(translated.encode("utf-8")).hexdigest())
 
 
+def key_for_digest(*, model_id: str, prompt_version: str, src_hash: str) -> str:
+    """文献速览提要（feed digest）的缓存键。
+
+    ⚠️ 与轨A/轨B **故意不同**：这里**不把术语命中算进键**。
+
+    理由：提要只有 20–85 字，术语靠译后的 `apply_hard_replace` 免费修正
+    （与 `hard_replace` 类术语"0 段失效、立刻生效"的承诺一致）。
+    若把术语算进键，改一个词就要让整批提要重跑 —— 而重跑不仅浪费，
+    还会带来 LLM 非确定性的漂移，把本来好好的提要随机改差。
+
+    这也意味着：**不要往提要 prompt 里塞 prompt_hint 术语块**。
+    塞了就等于把术语间接写进了键，上面这个设计就白费了。
+    """
+    return make_key("D", model_id, prompt_version, src_hash)
+
+
 def dirty_segments(segments: Iterable[Any], terms: list[Term],
                    cache: Cache, *, model_id: str, prompt_version: str) -> list[Any]:
     """给定（可能刚改过的）术语表，算出哪些段的轨A 译文已失效。

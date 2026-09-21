@@ -20,10 +20,11 @@
   - [1. 术语表体系与缓存机制](#1-术语表体系与缓存机制)
   - [2. 多音字与专业发音清洗](#2-多音字与专业发音清洗)
 - [六、质量检验与测试](#六质量检验与测试)
-- [七、常见问题 (FAQ)](#七常见问题-faq)
-- [八、排错与高级开发工具](#八排错与高级开发工具)
-- [九、版权与数据安全说明](#九版权与数据安全说明)
-- [十、开源许可](#十开源许可)
+- [七、文献速览（可选模块）](#七文献速览可选模块)
+- [八、常见问题 (FAQ)](#八常见问题-faq)
+- [九、排错与高级开发工具](#九排错与高级开发工具)
+- [十、版权与数据安全说明](#十版权与数据安全说明)
+- [十一、开源许可](#十一开源许可)
 
 ---
 
@@ -105,6 +106,7 @@ paper-zh/
 │   └─ s41574-022-00638-x/    # 42.7分钟伴读网页与音频示例
 │
 ├─ papers/                    # 输入目录：存放待处理 PDF 文献（git 忽略）
+│   └─ inbox/                 # 文献速览用：手工下载的 PDF 先丢这里（自动认领，待实现）
 ├─ data/                      # 产物输出目录（全部自动生成，git 忽略）
 │   ├─ reader/<id>.html       # ★ 自包含双向伴读网页（双击即开）
 │   ├─ audio/<id>.mp3         # ★ 完整播客音频 + 毫秒级时间戳 JSON + LRC/VTT
@@ -112,10 +114,13 @@ paper-zh/
 │   ├─ translation/<id>.md    # 轨A 忠实学术全译
 │   ├─ script/<id>.md         # 轨B 口语播客讲稿
 │   ├─ segments/<id>.json     # 结构化段落分块数据
+│   ├─ feed/                  # 文献速览：items.json 状态库 + digest/ 每期快照 + 提要有缓存
 │   └─ cache/                 # 段落级 LLM 响应缓存
 │
 ├─ tools/                     # 命令行工具入口
 │   ├─ run_pipeline.py        # ★ 端到端主工作流入口
+│   ├─ build_digest.py        # ★ 文献速览：PubMed 检索 → 两级提要 → 手机 HTML/MD
+│   ├─ push_digest.py         # ★ 文献速览：把某一期推送到微信 / Telegram / Discord
 │   ├─ build_audio.py         # 语音合成与时间戳对齐工具
 │   ├─ build_reader.py        # 自包含 Web Reader HTML 打包器
 │   ├─ build_interleave.py    # 中英交错对照生成器
@@ -123,6 +128,8 @@ paper-zh/
 │   └─ check_terms.py         # 术语命中与缩写冲突审计工具
 │
 ├─ src/                       # 核心业务模块
+│   ├─ feed.py                # 文献速览：PubMed 增量检索与状态库
+│   ├─ push.py                # 推送渠道（PushPlus / Telegram / Discord）
 │   ├─ polyphone.py           # 多音字发音清洗与正则转换
 │   ├─ textnorm.py            # 中文排版规范化与数字千分位处理
 │   ├─ prompts.py             # 提示词模板与版本控制器
@@ -136,6 +143,8 @@ paper-zh/
 │
 └─ tests/                     # 离线自动化测试套件
     ├─ test_core.py           # 核心测试（术语表 / 缓存 / 多音字 / 缩写处理）
+    ├─ test_digest.py         # 文献速览测试（快照选取 / 计长口径 / doc_id 推导）
+    ├─ test_push.py           # 推送层测试（渠道选择 / 分片边界 / 不泄漏密钥）
     └─ test_segment.py        # 分段不变量与结构完整性测试
 ```
 
@@ -216,11 +225,171 @@ python tools/qa_report.py
 # 2. 运行离线单元测试套件（无需 API 密钥）
 python tests/test_core.py       # 19/19 项测试：术语作用域、多音字映射、缩写清洗、段级缓存
 python tests/test_segment.py    # 8/8 项测试：PDF 分段解析结构不变量
+python tests/test_digest.py     # 12/12 项测试：快照选取、提要计长口径、doc_id 推导
+python tests/test_push.py       # 14/14 项测试：渠道选择、分片边界、密钥不泄露
 ```
 
 ---
 
-## 七、常见问题 (FAQ)
+## 七、文献速览（可选模块）
+
+本模块独立于上述 PDF 处理流水线，解决的是**流水线之前**的一步：从 PubMed 增量检索
+Nature Reviews 系列的新文献，生成中文提要与移动端页面，并可推送到微信 / Telegram / Discord。
+
+### 1. 过滤策略（基于实测）
+
+`"Nat Rev*"[jour]` 的检索结果中混有大量非综述条目。实测近 90 天共 566 条：
+
+| 指标 | 实测值 |
+|---|---|
+| 一周产量 | 约 **44 条**（覆盖 18 个期刊） |
+| 带摘要比例 | **39%**（566 条中 209 条） |
+| 「有摘要」与「带 `Review` 标签」重合度 | **98%**（204 / 209） |
+
+无摘要的 61% 为 Research Highlight、News 与更正启事。因此以「仅保留带摘要的条目」
+作为过滤条件，可将约 44 条/周降至约 16 条/周。该条件与 `Review` 出版类型标注近乎等价，
+但无需依赖期刊端的标注质量。
+
+### 2. 两级提要
+
+| 字段 | 长度 | 用途 |
+|---|---|---|
+| `brief` | ≤ 25 字 | 摘要式浏览；推送通知正文 |
+| `detail` | 50–85 字 | 展开阅读，含机制 / 数据 / 分类框架 |
+
+早期版本要求模型输出单一「20–45 字」字段，实测 8 条中 7 条超长（57–88 字）。
+原因不在约束强度，而在于**模型倾向写入更多信息**。现改为提供两个独立字段：
+模型可将完整信息写入 `detail`，同时必须另给一句独立的短句，两者互不依赖。
+`brief` 实测中位数为 25 字。
+
+### 3. 用法
+
+```bash
+# 1) 增量拉取 + 生成提要 + 产出手机页面（首次可用 --days 60 回填）
+python tools/build_digest.py --days 30
+
+# 2) 试水：只推 4 条（省 token）
+python tools/build_digest.py --limit 4
+
+# 3) 只看体量、不调用任何 LLM（零成本），并复核过滤器没误杀综述
+python tools/build_digest.py --no-llm --show-dropped
+
+# 4) 终端重看最近一期 / 重新渲染（改样式零成本）
+python tools/build_digest.py --list
+python tools/build_digest.py --render-only
+
+# 5) 挑中第 3、7 条 → 打印出确切命令
+python tools/build_digest.py --pick 3 7
+```
+
+产出在 `data/feed/digest/<日期>.html`——**单文件自包含、无外部依赖**，
+可以直接 AirDrop 到手机或用浏览器打开。默认只显示 `brief`，点卡片标记「要读」，
+底部汇总编号，点「复制编号」即可拿到 `--pick` 要的参数。
+
+### 4. 推送渠道
+
+支持微信（PushPlus）、Telegram、Discord 三个渠道，可单选亦可多选。
+
+```bash
+python tools/push_digest.py --list-channels             # 查看各渠道配置状态
+python tools/push_digest.py --channels all --dry-run    # 预览内容，不实际发送
+python tools/push_digest.py --channels telegram         # 单选
+python tools/push_digest.py --channels telegram,discord # 多选
+python tools/push_digest.py --channels all              # 所有已配置的渠道
+```
+
+也可在生成时直接推送：`python tools/build_digest.py --days 30 --push wechat`。
+仅需重发某一期而不重新检索、不调用 LLM：`python tools/push_digest.py --channels wechat --days 7`。
+
+| 渠道 | 所需 `.env` 变量 |
+|---|---|
+| `wechat` | `PUSHPLUS_TOKEN`（可选 `PUSHPLUS_TOPIC` 群组编码） |
+| `telegram` | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` |
+| `discord` | `DISCORD_WEBHOOK_URL`，或 `DISCORD_BOT_TOKEN` + `DISCORD_CHANNEL_ID` |
+
+`--channels all` 仅发送**配置完整**的渠道；未配置的渠道会在输出中说明跳过原因。
+
+**实现说明**
+
+1. **只推内容，不推链接。** 速览页面与 Web Reader 均为单文件自包含 HTML，**没有 URL**，
+   链接在手机上无法打开。三个渠道均可直接承载正文，故发送正文。
+2. **所有渠道统一发送纯文本。** Telegram 的 MarkdownV2 要求转义
+   ``_*[]()~`>#+-=|{}.!``，遗漏一个字符即导致整条发送失败；Discord 使用自有 Markdown
+   方言；PushPlus 使用 md 模板 —— 三者规则互不兼容。统一纯文本可从根源上消除此类问题。
+3. **微信渠道限制单条消息。** `src/push.py` 的 `POLICY` 中微信 `max_messages=1`，
+   条目超出容量时只发送首条，并**明确说明剩余条数**；Telegram / Discord 不受此限。
+
+**故障处理**：单个渠道失败不影响其他渠道，结果逐条列出；配置缺失时报告的是**变量名**，
+而非难以理解的 HTTP 401。**输出中不会出现密钥的值。**
+
+**`--days` 语义**：`--days` 是**检索回看窗口**，不是推送范围。推送范围由本地状态库决定——
+只推送状态为 `new`、即从未推送过的条目（记录于 `data/feed/items.json`）。
+因此定期任务建议使用较大的窗口（如 `--days 30`）：若某次未执行，下次仍可补回遗漏；
+状态库保证不会重复推送。窗口设为 `7` 则会在漏跑时永久遗漏中间数日。
+
+### 5. 微信详情页排版
+
+PushPlus 的微信推送分两层，**只有第二层可自定义**：
+
+| 层 | 内容 | 是否可控 |
+|---|---|---|
+| ① 对话列表中的卡片 | 标题 + 摘要 + 链接 | ❌ 使用微信模板消息，字段经微信审核，不可自定义 |
+| ② 点开后的详情页 | 请求的 `content` | ✅ 由 `template` 参数决定渲染方式 |
+
+详情页默认输出结构化排版：序号 + **标题** / 简介 / `detail` / 期刊·日期·**可点击 DOI**。
+`--style brief` 可省掉 `detail`（条目较多、需要省容量时使用）。
+样式有两种挂载方式，由 `.env` 的 `PUSHPLUS_TEMPLATE` 选择：
+
+| 值 | 样式挂载方式 | 说明 |
+|---|---|---|
+| `html`（默认） | `<style>` 块 + class | markup 约省四成，容量接近翻倍 |
+| `html-inline` | 逐元素内联 `style` | 已验证可用，作为保底方案 |
+| `markdown` / `txt` | 纯文本 | 不使用 HTML |
+
+微信渠道内容上限为 **2 万字**（免费额度）。实测容量（带 `detail`）：
+
+| 条数 | `html`（`<style>` 块） | `html-inline`（内联） |
+|---|---|---|
+| 11 条 | 5,671 字（30%） | 7,948 字（42%） |
+| 25 条 | 11,551 字（61%） | 17,342 字（91%） |
+| 40 条 | **18,019 字（95%），可容纳** | 超出上限 |
+
+内容超出上限时按**条目边界**截断，并在末尾说明未显示的条数。
+
+### 6. 与 PDF 流水线的衔接
+
+**手工获取 PDF 的环节不做自动化**（例如通过校园网下载）。工具的作用是**在断点两侧各备好落点**：
+
+`doc_id` 完全由 DOI 决定（`10.1038/s41583-025-00929-y` → `s41583-025-00929-y`），
+与 `run_pipeline.py` 的 `doc_id = pdf.stem` 规则一致；PubMed 题录的 DOI 覆盖率为 **100%**。
+因此在尚未下载 PDF 时，`--pick` 即可给出完整命令：
+
+```text
+PDF 存成 : s41583-025-00929-y.pdf  ->  放进 papers/
+运行     : python tools/run_pipeline.py s41583-025-00929-y --field neuroscience --stage all
+```
+
+`--field` 由刊名自动推导（`Nature reviews. Neuroscience` → `neuroscience`），
+避免因漏传 `--field` 导致 `field:` 级术语**静默**少命中。
+
+### 7. 缓存与术语
+
+速览提要有独立缓存，其键**不含术语**：提要在生成之后才做 `hard_replace` 字符串替换，
+因此**修改术语 = 0 条失效、立即生效**，与轨A / 轨B 对 `hard_replace` 的承诺一致。
+代价是**提示词中不能包含术语块** —— 否则等于将术语间接写入缓存键，该设计即失效。
+
+### 8. 已修正的问题（均有回归测试）
+
+| 问题 | 症状 | 修正 |
+|---|---|---|
+| 快照按文件名取最新 | `-`(0x2D) < `.`(0x2E)，`2026-09-21-0843.json` 排在 `2026-09-21.json` 之前，取末尾反而拿到旧的一期 | 改为按快照内部 `generated_at` 排序 |
+| 同一日期重复运行覆盖快照 | 已发到手机的页面与最新快照编号不一致，`--pick` 指向错误文献 | 文件名追加时刻（`2026-09-21-0843`） |
+| 用 `len()` 判断中文长度 | `BRCA1-BARD1 与 53BP1 轴拮抗决定 HR 或 NHEJ 的选择。` 的 `len()` 为 40，实读 15 字，被误判超长 | 统一使用 `textnorm.reading_len()`（连续拉丁串计 1 字） |
+| 详情页元信息行整体转义 | `<a>` 标签被转义为文字，页面直接显示标签源码 | 逐段转义后再拼接 |
+
+---
+
+## 八、常见问题 (FAQ)
 
 **Q：执行时报 `ModuleNotFoundError` 缺失依赖？**
 请确保激活了正确的 Python 环境并安装了依赖：`pip install -r requirements.txt`。
@@ -234,7 +403,7 @@ python tests/test_segment.py    # 8/8 项测试：PDF 分段解析结构不变�
 
 ---
 
-## 八、排错与高级开发工具
+## 九、排错与高级开发工具
 
 当引入新期刊排版导致分段异常时，可使用内置的版式探针工具定位行级特征：
 
@@ -249,14 +418,14 @@ python devtools/inspect_lines.py papers/xxx.pdf --grep "Anal cancer" --around 2
 
 ---
 
-## 九、版权与数据安全说明
+## 十、版权与数据安全说明
 
 - **合规边界**：学术综述版权归原期刊与作者所有。本项目全套产物（译文、讲稿、音频、HTML 伴读）**仅供个人学习与研究使用**，严禁用于公开分发或商业用途。
 - **Git 隔离防护**：项目 `.gitignore` 已配置严格规则，默认排除所有输入 PDF（`papers/*.pdf`）及所有生成数据（`data/`），防止版权敏感资产意外同步至公开代码仓库。
 
 ---
 
-## 十、开源许可
+## 十一、开源许可
 
 本项目代码基于 [MIT License](LICENSE) 开源发布。
 许可证仅适用于代码库本身的实现，不涵盖用户通过本工具处理的第三方文献及其派生产物。
