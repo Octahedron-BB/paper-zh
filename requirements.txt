@@ -1,5 +1,7 @@
 # 运行时依赖
 pymupdf>=1.24        # PDF 文字与坐标提取（导入名是 pymupdf，不是 fitz）
-pyyaml>=6.0          # 术语表
+pyyaml>=6.0          # 术语表与多音字规则
+edge-tts>=6.1.0      # 中文播客语音合成与分段毫秒级时间戳提取
 
-# 说明：LLM 调用只用标准库 urllib，不需要 openai / google 等 SDK
+# 说明：LLM 调用只用标准库 urllib，不需要 openai / google 等第三方大型 SDK
+

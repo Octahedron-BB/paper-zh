@@ -91,6 +91,23 @@ blockquote:hover {
 """
 
 
+def run_build_interleave(doc_id: str, order: str = "zh", out_dir: Path | None = None) -> Path:
+    seg, zh_map = load(doc_id)
+    n = sum(len(s["segments"]) for s in seg["sections"])
+    text = render(seg, zh_map, order)
+
+    out = out_dir or (Path(__file__).resolve().parent.parent / "data" / "interleave")
+    out.mkdir(parents=True, exist_ok=True)
+    md = out / f"{doc_id}.md"
+    md.write_text(text, encoding="utf-8")
+    (out / "reader.css").write_text(CSS, encoding="utf-8")
+
+    zh_total = sum(len((zh_map.get(g["sid"]) or {}).get("zh", ""))
+                   for s in seg["sections"] for g in s["segments"])
+    print(f"[中英对照] {md.relative_to(Path(__file__).resolve().parent.parent)} ｜ {len(seg['sections'])} 节 / {n} 段 / 中文 {zh_total} 字")
+    return md
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--doc-id", required=True)
@@ -99,22 +116,7 @@ def main() -> int:
     ap.add_argument("--out", default="data/interleave")
     args = ap.parse_args()
 
-    seg, zh_map = load(args.doc_id)
-    n = sum(len(s["segments"]) for s in seg["sections"])
-    text = render(seg, zh_map, args.order)
-
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
-    md = out / f"{args.doc_id}.md"
-    md.write_text(text, encoding="utf-8")
-    (out / "reader.css").write_text(CSS, encoding="utf-8")
-
-    zh_total = sum(len((zh_map.get(g["sid"]) or {}).get("zh", ""))
-                   for s in seg["sections"] for g in s["segments"])
-    print(f"[完成] {md} ｜ {len(seg['sections'])} 节 / {n} 段 / 中文 {zh_total} 字 "
-          f"｜ 共 {len(text)} 字符")
-    print(f"       可选样式: {out / 'reader.css'}（见文件中注释的启用方式）")
-    report_density(seg, zh_map)
+    run_build_interleave(args.doc_id, args.order, Path(args.out))
     return 0
 
 
