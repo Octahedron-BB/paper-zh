@@ -1,102 +1,24 @@
-# ==============================================================================
-# Git 忽略规则 (.gitignore)
-# ==============================================================================
-
-# 1. 密钥与本地配置
-.env
-.env.local
-.env.*.local
-.DS_Store
-Thumbs.db
-desktop.ini
-*.cookie
-*.token
-*cookie*.txt
-*token*.txt
-session.txt
-.auth_cache/
-
-# 2. 编辑器与 IDE 本地杂项
-.idea/
-*.sublime-project
-*.sublime-workspace
-.vscode/*.log
-
-# 3. Python 运行时与缓存
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-.venv/
-env/
-venv/
-ENV/
-.pytest_cache/
-.coverage
-htmlcov/
-.mypy_cache/
-.ruff_cache/
-
-# 4. 私人开发记录、临时脚本与专有平台登录脚本
-archive/
-scratch/
-tmp/
-temp/
+# Logs
+logs
 *.log
-*.tmp
-tools/login_proxy.py
-tools/*_local.py
-tools/*_private.py
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# 5. 输入文件：原文（PDF / HTML 全文，版权原因严禁提交）
-papers/*.pdf
-papers/*.PDF
-papers/**/*.pdf
-papers/**/*.PDF
-papers/*.html
-papers/*.HTML
-papers/*.htm
-papers/*.HTM
-papers/**/*.html
-papers/**/*.HTML
-papers/**/*.htm
-papers/**/*.HTM
-!papers/.gitkeep
+node_modules
+dist
+dist-ssr
+*.local
 
-# 6. 产物数据：全部由原文派生，一律不提交到公共仓库
-# ⚠️ 尤其是 data/ 下的全文译文、讲稿、音频与伴读 HTML，属于高版权敏感资产。
-data/
-!data/.gitkeep
-
-# 7. 临时媒体文件（放行 examples/ 范例资产）
-*.mp3
-*.wav
-*.m4a
-*.lrc
-*.vtt
-!examples/**
-
-# ==============================================================================
-# 仓库保留的核心资产清单（无版权风险，可安全分享与复用）：
-#   - src/ tools/ tests/ devtools/
-#   - glossary.yaml       主术语表（跨文献复用的核心资产）
-#   - glossary-d/         单篇术语表
-#   - polyphone.yaml      多音字与发音清洗词典
-#   - README.md  requirements.txt  .env.example  .vscode/settings.json
-# ==============================================================================
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
