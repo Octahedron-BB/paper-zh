@@ -133,6 +133,13 @@ python tools/run_pipeline.py --all
 
 ```text
 paper-zh/
+├─ web/                       # ★ 纯前端 Local-First Web 伴读工作台 (Vue 3 + Vite)
+│   ├─ src/views/             # 页面视图：文献速览(FeedView)、伴读阅读器(ReaderView)、个人书架(LibraryView)
+│   ├─ src/core/              # 核心引擎：4线程并发流水线、PubMed检索、HTML/PDF解析、Edge-TTS合成
+│   ├─ src/components/        # 交互组件：设置(含Ollama一键预设)、伴读生成弹窗、底栏播放器
+│   ├─ src/store/             # 本地持久化：localStorage 设置 + IndexedDB 离线文献书架
+│   └─ server/                # Node.js 微软 Edge-TTS Sec-MS-GEC 签名中间件
+│
 ├─ README.md                  # 项目说明与使用指南
 ├─ requirements.txt           # 核心依赖清单 (pymupdf + pyyaml + edge-tts)
 ├─ .env.example               # 环境变量与 API 密钥模板

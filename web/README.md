@@ -76,3 +76,53 @@ npm run dev
 ```
 
 启动后在浏览器打开 `http://localhost:5174/` 即可。
+
+---
+
+## 📂 代码目录与架构介绍
+
+本项目遵循清晰的模块化与分层设计：
+
+```text
+web/
+├── index.html                  # 单页应用入口 HTML（自适应视口与字体）
+├── vite.config.ts              # Vite 配置文件（已配置 base: './' 相对路径与 Edge-TTS 中间件）
+├── package.json                # 项目依赖规范（Vue 3、TailwindCSS、pdfjs-dist、idb-keyval 等）
+│
+├── server/                     # 本地服务端开发支持
+│   └── edgeTtsServer.ts        # Node.js 微软 Edge-TTS Sec-MS-GEC 签名代理中间件
+│
+├── public/                     # 静态公共资源
+│
+└── src/                        # 前端核心业务源码
+    ├── App.vue                 # 根组件（顶栏导航、全局深色模式、键盘快捷键）
+    ├── main.ts                 # Vue 应用挂载入口与样式引入
+    │
+    ├── views/                  # 核心功能页面
+    │   ├── FeedView.vue        # 【文献速览】PubMed 综述雷达、时间窗口筛选、一键 AI 导读、文件上传
+    │   ├── ReaderView.vue      # 【伴读阅读器】沉浸式多栏伴读视窗、多视图切换、音频精确高亮
+    │   └── LibraryView.vue     # 【个人书架】已制作文献列表、历史记录、一键继续阅读与 HTML 导出
+    │
+    ├── components/             # 通用交互组件
+    │   ├── SettingsModal.vue   # 【设置弹窗】LLM 服务商 / 本地 Ollama 切换、TTS 引擎与音色管理
+    │   ├── PipelineModal.vue   # 【流水线弹窗】4 线程并发进度追踪、各阶段详细日志与试跑模式
+    │   └── PlayerBar.vue       # 【底栏播放控制器】播放/暂停、快进快退、倍速调节与进度滑块
+    │
+    ├── store/                  # 本地持久化状态
+    │   ├── settings.ts         # 用户设置状态（存储于 localStorage，0 云端泄露）
+    │   └── library.ts          # 文献书架持久化（存储于 IndexedDB，支持大文件与离线音视频）
+    │
+    └── core/                   # 核心算法与底层引擎
+        ├── types.ts            # 全局 TypeScript 接口与类型定义
+        ├── pubmed.ts           # NCBI PubMed ESearch/EFetch 接口对接与综述智能提取
+        ├── segmentHtml.ts      # Nature 等期刊语义 HTML 高保真分段解析引擎
+        ├── pdfParser.ts        # 浏览器端纯前端 PDF 文本版面智能分段抽取
+        ├── llm.ts              # 通用大模型客户端（OpenAI / DeepSeek / Gemini / 本地 Ollama）
+        ├── glossary.ts         # 专业术语匹配与语境保护的零成本硬替换引擎
+        ├── abbrev.ts           # 文献首字母缩写与权威全称定义自动抽取算法
+        ├── polyphone.ts        # 汉字多音字与医学专有名词发音清洗模块
+        ├── edgeTts.ts          # 微软 Edge-TTS 客户端通信与时间戳提取
+        ├── pipeline.ts         # 4 线程高并发流水线调度器（翻译/改写/语音合成/零漂移对齐）
+        ├── readerBuilder.ts    # 自包含单文件 Web Reader HTML 代码打包生成器
+        └── prompts.ts          # 学术双语翻译与口语化伴读讲稿 Prompt 模板
+```
