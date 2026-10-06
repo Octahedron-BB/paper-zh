@@ -1,5 +1,9 @@
 # 文献 → 中文分层伴读与播客生成系统 (paper-zh)
 
+> 🚀 **全新上线：纯前端 Local-First Web 伴读工作台（`web` 分支）**  
+> 现已支持免安装 Python 环境的纯浏览器交互伴读！内置 **PubMed 前沿综述雷达、一键拖拽解析 HTML/PDF、4 线程并发学术全译与口语讲稿生成、Edge-TTS 逐句卡拉OK高亮、本地 IndexedDB 书架**，并支持 Mac 芯片通过 Ollama 进行本地 GPU 硬件加速，零服务器后端依赖。  
+> 详见：[Web 端专属文档说明 (web/README.md)](web/README.md) 或通过 GitHub Pages 直接在线使用！
+
 将 Nature Reviews 等高密度英文学术综述（**语义 HTML 网页全文 / 官方 PDF**），一键自动化转化为端到端的高质量中文分层伴读与播客有声系统：
 
 1. **自包含 Web Reader 双向伴读网页**（`data/reader/<doc_id>.html`）—— **单文件零依赖、内嵌音频、逐句变色高亮、点句即播、移动端/PC 全自适应**
