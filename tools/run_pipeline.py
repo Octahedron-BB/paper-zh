@@ -51,33 +51,73 @@ from tools.build_reader import build_reader  # noqa: E402
 META_DIR = ROOT / "data" / "meta"
 
 
-def resolve_pdf(name: str | None, doc_id: str | None = None) -> Path:
-    """找 PDF。支持绝对路径、相对路径、文件名、或 doc_id。
-
-    ⚠️ 以前 name/doc_id 都没给时会返回一个**硬编码的默认 PDF**
-    （s41575-024-00932-1）—— 忘传参数时会静默对着另一篇文献跑完全流程。
-    现在改成：papers/ 下只有一篇就用它，多篇就报错并列出来。
+def resolve_document(target: str | None = None, doc_id: str | None = None,
+                     prefer_html: bool = True) -> tuple[Path, str, str]:
+    """寻找输入文档（支持 HTML 与 PDF，支持自动反代拉取）。
+    返回 (Path, "html" | "pdf", doc_id)。
     """
-    target = name or doc_id
-    if not target:
-        ids = pdf_ids(ROOT)
-        if len(ids) == 1:
-            return ROOT / "papers" / f"{ids[0]}.pdf"
-        if not ids:
-            raise SystemExit("[错误] papers/ 下没有任何 PDF")
-        raise SystemExit(
-            f"[错误] papers/ 下有 {len(ids)} 篇，请显式指定 --pdf：{', '.join(ids)}")
-    p = Path(target)
-    cands = ([p] if p.is_absolute() else []) + [
-        ROOT / p,
-        ROOT / "papers" / p,
-        ROOT / "papers" / f"{p.stem}.pdf",
-        ROOT / "papers" / f"{p.name}.pdf",
-    ]
-    for c in cands:
-        if c.exists():
-            return c
-    return ROOT / "papers" / (f"{p.name}.pdf" if not p.suffix else p.name)
+    raw_id = (doc_id or target or "").replace(".pdf", "").replace(".html", "").strip()
+
+    # 1. 显式给定了本地存在的文件路径
+    if target:
+        p = Path(target)
+        if not p.is_absolute():
+            p = ROOT / p if (ROOT / p).exists() else ROOT / "papers" / p
+        if p.exists():
+            dtype = "html" if p.suffix.lower() == ".html" else "pdf"
+            return p, dtype, p.stem
+
+    # 2. 根据 doc_id 在 papers/ 查找
+    if raw_id:
+        h = ROOT / "papers" / f"{raw_id}.html"
+        pdf = ROOT / "papers" / f"{raw_id}.pdf"
+        if prefer_html and h.exists():
+            return h, "html", raw_id
+        if not prefer_html and pdf.exists():
+            return pdf, "pdf", raw_id
+        if h.exists():
+            return h, "html", raw_id
+        if pdf.exists():
+            return pdf, "pdf", raw_id
+
+        # 3. 本地无文件，尝试通过机构反代自动拉取
+        env = load_env(ROOT / ".env")
+        if env.get("ACADEMIC_PROXY_BASE_URL"):
+            try:
+                print(f"[反代抓取] 正在通过机构代理拉取 {raw_id} 的网页版全文...")
+                from src.fetcher import fetch_article_html
+                fetched = fetch_article_html(raw_id, out_path=h)
+                print(f"[反代抓取] 成功获取 HTML: {fetched.relative_to(ROOT)}")
+                return fetched, "html", raw_id
+            except Exception as e:
+                print(f"[反代抓取提示] 自动拉取未成功 ({e})")
+                if pdf.exists():
+                    print(f"[降级] 自动切回本地已有的 PDF: {pdf.name}")
+                    return pdf, "pdf", raw_id
+
+    # 4. 未指定参数：检查 papers/ 目录
+    from src.docs import doc_ids
+    dids = doc_ids(ROOT)
+    if len(dids) == 1:
+        did = dids[0]
+        h = ROOT / "papers" / f"{did}.html"
+        pdf = ROOT / "papers" / f"{did}.pdf"
+        if prefer_html and h.exists():
+            return h, "html", did
+        if pdf.exists():
+            return pdf, "pdf", did
+        if h.exists():
+            return h, "html", did
+    if not dids:
+        raise SystemExit("[错误] papers/ 下没有任何 PDF 或 HTML 文献")
+    raise SystemExit(
+        f"[错误] papers/ 下有 {len(dids)} 篇，请显式指定目标文献：{', '.join(dids)}")
+
+
+def resolve_pdf(name: str | None, doc_id: str | None = None) -> Path:
+    """兼容旧接口的 PDF 解析。"""
+    p, _, _ = resolve_document(target=name, doc_id=doc_id, prefer_html=False)
+    return p
 
 
 def resolve_field(doc_id: str, cli_field: str | None) -> str | None:
@@ -101,17 +141,22 @@ def resolve_field(doc_id: str, cli_field: str | None) -> str | None:
     return cli_field if cli_field is not None else saved
 
 
-def process_single_doc(pdf: Path, args: argparse.Namespace) -> int:
-    """处理单篇文档的全流程。"""
-    doc_id = args.doc_id or pdf.stem
+def process_single_doc(doc_path: Path, doc_type: str, args: argparse.Namespace) -> int:
+    """处理单篇文档的全流程（支持 HTML 与 PDF）。"""
+    doc_id = args.doc_id or doc_path.stem
     field = resolve_field(doc_id, args.field)
 
     print("=" * 76)
-    print(f"[文档] {pdf.name}  doc_id={doc_id}  field={field or '(无)'}")
+    print(f"[文档] {doc_path.name}  doc_id={doc_id}  格式={doc_type.upper()}  field={field or '(无)'}")
 
     # 1. 分段阶段
-    doc = load_or_segment(pdf, ROOT / "data" / "segments" / f"{doc_id}.json",
-                          doc_id=doc_id, force=args.force_segment)
+    if doc_type == "html":
+        from src.segment_html import load_or_segment_html
+        doc = load_or_segment_html(doc_path, ROOT / "data" / "segments" / f"{doc_id}.json",
+                                   doc_id=doc_id, force=args.force_segment)
+    else:
+        doc = load_or_segment(doc_path, ROOT / "data" / "segments" / f"{doc_id}.json",
+                              doc_id=doc_id, force=args.force_segment)
     st = doc.stats()
     print(f"[分段] {st['sections']} 节 / {st['segments']} 段 / {st['words']:,} 词 （每段中位 {st['words_median']} 词）")
     print(f"[标题] {doc.title[:70]}")
@@ -197,7 +242,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="文献 -> 中文分层伴读 端到端完整流水线 CLI")
     ap.add_argument("--pdf", default=None,
                     help="目标 PDF：路径、文件名或 doc_id（默认在 papers/ 里找）")
-    ap.add_argument("--doc-id", default=None, help="文档 ID（默认取 PDF 文件名）")
+    ap.add_argument("--html", default=None,
+                    help="目标 HTML：路径、文件名或 doc_id（网页版优先，支持自动反代拉取）")
+    ap.add_argument("--doc-id", default=None, help="文档 ID（默认取文件名）")
     ap.add_argument("--all", action="store_true", help="一键批量处理 papers/ 目录下的所有 PDF")
     ap.add_argument("--field", default=None, help="学科域，用于 field 级术语（如 neuroscience）")
     ap.add_argument("--stage", choices=["segment", "translate", "script", "interleave", "audio", "reader", "all"],
@@ -232,17 +279,19 @@ def main() -> int:
         for i, pdf_path in enumerate(pdf_files, 1):
             print(f"\n\n>>>>>>>>>> [{i}/{len(pdf_files)}] 正在处理: {pdf_path.name} <<<<<<<<<<\n")
             args.doc_id = pdf_path.stem
-            process_single_doc(pdf_path, args)
+            process_single_doc(pdf_path, "pdf", args)
         print("\n" + "=" * 76)
         print("🎉 [全部完成] 所有文献已全部处理完毕！")
         print("=" * 76)
         return 0
     else:
-        pdf = resolve_pdf(args.pdf, args.doc_id)
-        if not pdf.exists():
-            print(f"[错误] 找不到 PDF 文件: {pdf}")
+        prefer_html = bool(args.html or (not args.pdf and (ROOT / "papers" / f"{args.doc_id or ''}.html").exists()))
+        doc_path, doc_type, did = resolve_document(args.html or args.pdf, args.doc_id, prefer_html=prefer_html)
+        if not doc_path.exists():
+            print(f"[错误] 找不到输入文件: {doc_path}")
             return 1
-        return process_single_doc(pdf, args)
+        args.doc_id = did
+        return process_single_doc(doc_path, doc_type, args)
 
 
 if __name__ == "__main__":

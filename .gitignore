@@ -9,6 +9,12 @@
 .DS_Store
 Thumbs.db
 desktop.ini
+*.cookie
+*.token
+*cookie*.txt
+*token*.txt
+session.txt
+.auth_cache/
 
 # 2. 编辑器与 IDE 本地杂项
 .idea/
@@ -47,21 +53,30 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# 4. 私人开发记录与临时脚本
+# 4. 私人开发记录、临时脚本与专有平台登录脚本
 archive/
 scratch/
 tmp/
 temp/
 *.log
 *.tmp
+tools/login_proxy.py
+tools/*_local.py
+tools/*_private.py
 
-# 5. 输入文件：原文 PDF（版权原因，严禁提交）
+# 5. 输入文件：原文（PDF / HTML 全文，版权原因严禁提交）
 papers/*.pdf
 papers/*.PDF
-# ⚠️ 必须递归匹配：`papers/*.pdf` 只管**直接子文件**，
-#    `papers/inbox/` 里手工下载的 PDF 不会被忽略，一个 `git add -A` 就会把原文提交上去。
 papers/**/*.pdf
 papers/**/*.PDF
+papers/*.html
+papers/*.HTML
+papers/*.htm
+papers/*.HTM
+papers/**/*.html
+papers/**/*.HTML
+papers/**/*.htm
+papers/**/*.HTM
 !papers/.gitkeep
 
 # 6. 产物数据：全部由原文派生，一律不提交到公共仓库

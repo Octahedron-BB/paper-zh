@@ -50,6 +50,21 @@ def pdf_ids(root: str | Path) -> list[str]:
     return sorted(p.stem for p in d.glob("*.pdf")) if d.is_dir() else []
 
 
+def html_ids(root: str | Path) -> list[str]:
+    """`papers/*.html` 的 doc_id，按名字排序。"""
+    d = papers_dir(root)
+    return sorted(p.stem for p in d.glob("*.html")) if d.is_dir() else []
+
+
+def doc_ids(root: str | Path) -> list[str]:
+    """返回 papers/ 下所有文档的 doc_id（兼顾 .pdf 与 .html）。"""
+    d = papers_dir(root)
+    if not d.is_dir():
+        return []
+    stems = {p.stem for p in d.glob("*.pdf")} | {p.stem for p in d.glob("*.html")}
+    return sorted(stems)
+
+
 def ids_with(root: str | Path, stage: str) -> list[str]:
     """已经产出 `stage` 阶段产物的 doc_id，按名字排序。"""
     try:

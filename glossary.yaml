@@ -206,3 +206,12 @@ terms:
     aliases: ["女性性功能量表", "女性性功能指数问卷"]
     full_en: female sexual function index
     scope: global
+  - term: SIBO
+    zh: 小肠细菌过度生长
+    mode: hard_replace
+    aliases:
+    - 小肠细菌过度繁殖
+    - SIBO
+    scope: global
+    full_en: small intestinal bacterial overgrowth
+    status: approved

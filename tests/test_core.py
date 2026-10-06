@@ -177,6 +177,29 @@ def test_hard_replace_change_costs_zero_retranslation():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_hard_replace_context_and_abbrev_protection():
+    """验证引述语境（缩写为 IBS）与学术英文括号（肠易激综合征（IBS））受到保护不被误杀。"""
+    terms = [
+        Term(term="IBS", zh="肠易激综合征", mode=MODE_HARD),
+        Term(term="IBS-C", zh="便秘型肠易激综合征", mode=MODE_HARD),
+    ]
+    # 1. 缩写引述语境：必须保留英文 IBS，绝不能变成「英文缩写为 肠易激综合征」
+    t1 = "该病的全称为肠易激综合征，英文缩写为 IBS。"
+    assert apply_hard_replace(terms, t1) == "该病的全称为肠易激综合征，英文缩写为 IBS。"
+
+    # 2. 括号学术对照：必须保留括号英文缩写，不能被暴力删除或替换成中文
+    t2 = "肠易激综合征（IBS）是常见病。"
+    assert apply_hard_replace(terms, t2) == "肠易激综合征（IBS）是常见病。"
+
+    # 3. 正常正文里的英文缩写必须被替换
+    t3 = "许多 IBS 患者经常就诊。"
+    assert apply_hard_replace(terms, t3) == "许多 肠易激综合征 患者经常就诊。"
+
+    # 4. 长词优先：IBS-C 必须先于 IBS 替换，不能被截断为「肠易激综合征-C」
+    t4 = "针对 IBS-C 和 IBS 患者的试验。"
+    assert apply_hard_replace(terms, t4) == "针对 便秘型肠易激综合征 和 肠易激综合征 患者的试验。"
+
+
 def test_hard_terms_are_excluded_from_cache_key():
     """同一个 hard_replace 术语改译法，缓存键必须完全不变（这是上一条的机制保证）。"""
     a = key_for_translation(model_id=MODEL, prompt_version=PROMPT_V,

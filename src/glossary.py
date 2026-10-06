@@ -292,14 +292,19 @@ def hits_signature(terms: Iterable[Term]) -> str:
     return " ;; ".join(sorted(t.signature() for t in terms))
 
 
+ABBR_INTRO_RE = re.compile(
+    r"(?:(?:英文)?(?:缩写|简写|简称)(?:为|是|成)?|(?:代号|代称为|命名为|称作|称为|写作|标记为)|(?:即|或称))\s*$"
+)
+
+
 def _fix_parenthetical(text: str, t: "Term", lookback: int = 40) -> str:
     """处理译文里中文括号包裹的缩写。
 
-    规则（顺序即优先级）：
-      - 括号前 lookback 字符内**已出现** t.zh  => 括号是冗余的，删掉
-        （例：「背外侧前额叶（DLPFC）」 -> 「背外侧前额叶」）
-      - 否则 => 括号里是唯一的信息载体，把缩写换成中文，**不能删**
-        （例：「动作停止指标（SSRT）」 -> 「动作停止指标（停止信号反应时）」）
+    规则：
+      - 括号前 lookback 字符内**已出现** t.zh，且 t.term 为英文字符串（如「肠易激综合征（IBS）」）：
+        这是标准的学术专有名词加注写法，完整保留，避免删掉后丢失英文对照信息。
+      - 括号前**未出现** t.zh（如「动作停止指标（SSRT）」）：
+        把括号里的缩写换成规范中文译名「动作停止指标（停止信号反应时）」。
     """
     pat = re.compile(rf"[（(]\s*(?-i:[a-z])?{re.escape(t.term)}\s*[）)]")
     pieces: list[str] = []
@@ -307,52 +312,71 @@ def _fix_parenthetical(text: str, t: "Term", lookback: int = 40) -> str:
     for m in pat.finditer(text):
         pieces.append(text[last:m.start()])
         before = text[max(0, m.start() - lookback):m.start()]
-        pieces.append("" if (t.zh and t.zh in before) else f"（{t.zh}）")
+        if t.zh and t.zh in before:
+            # 前方已有中文名，保留规范的括号与缩写（如 肠易激综合征（IBS））
+            pieces.append(f"（{t.term}）")
+        else:
+            pieces.append(f"（{t.zh}）")
         last = m.end()
     pieces.append(text[last:])
     return "".join(pieces)
+
+
+def _replace_term_token(text: str, t: "Term") -> str:
+    """带语境保护的英文原词替换。"""
+    pat = re.compile(rf"(?<![A-Za-z]){re.escape(t.term)}(?![A-Za-z])")
+
+    def _sub(m: re.Match[str]) -> str:
+        start, end = m.start(), m.end()
+        before_50 = text[max(0, start - 50):start]
+        after_10 = text[end:min(len(text), end + 10)]
+
+        # 1. 括号内缩写保护：如「肠易激综合征（IBS）」不替换括号里的 IBS
+        if (before_50.endswith("（") or before_50.endswith("(")) and (after_10.startswith("）") or after_10.startswith(")")):
+            if t.zh and t.zh in before_50:
+                return m.group(0)
+
+        # 2. 引述与定义语境保护：如「英文缩写为 IBS」「简称 IBS」保留英文原词
+        if ABBR_INTRO_RE.search(before_50):
+            return m.group(0)
+
+        return t.zh
+
+    return pat.sub(_sub, text)
 
 
 def apply_hard_replace(terms: Iterable[Term], translated: str) -> str:
     """对**译文**做零成本替换。只作用于 `hard_replace` 类条目，所以改这类术语永不重跑 LLM。
 
     处理四类情况（顺序重要）：
-      ① 中文括号里的冗余缩写：`背外侧前额叶（DLPFC）` -> 删掉括号部分，
-         否则下一步会变成 `背外侧前额叶（背外侧前额叶）`
+      ① 中文括号里的缩写：保护已有译名的括号，或补齐未有译名的括号
       ② 带方位前缀的英文缩写：`aDLPFC` -> `前部背外侧前额叶`
-         （仅当 zh 是中文时才加前缀；zh 本身就是缩写则保持原样，避免译出「前部DLPFC」这种别扭写法）
-      ③ 英文原词本身：`DLPFC` -> `背外侧前额叶`
-         ⚠️ 初版漏了这一步，只替换 aliases —— 于是 LLM 只要保留英文缩写，
-            这条 hard_replace 就形同虚设（本文的 DLPFC 就是这么漏的）
+      ③ 英文原词本身：带语境保护（保护缩写定义语境如「缩写为 IBS」）
       ④ 同义别名：`抑制性控制` -> `抑制控制`
 
-    💡 如果你希望**保留英文缩写不译**（中文医学文献里的常见做法），
-       把该条的 zh 直接设成缩写本身即可（如 `zh: DLPFC`），此时 ②③ 变成无操作。
+    注意：必须严格按术语长度降序处理，避免长词（如 IBS-C）被短词（如 IBS）提前截断破坏。
     """
     out = translated
-    for t in active(terms):
-        if t.mode != MODE_HARD:
-            continue
+    # 严格按长度降序排列待替换术语
+    active_hard = sorted([t for t in active(terms) if t.mode == MODE_HARD],
+                         key=lambda x: len(x.term), reverse=True)
 
+    for t in active_hard:
         # ① 处理中文括号里的缩写
-        # ⚠️ 初版这里是无条件删除 `（ABBR）`，会**丢信息**：
-        #    英文 "Action stopping indices (SSRT)" 译成「动作停止指标（SSRT）」时，
-        #    括号前并没有中文译名，删掉就把 SSRT 整个丢了（本文真实踩到过）。
-        #    正确规则：**仅当括号前已出现中文译名时才删**，否则把缩写换成中文。
         out = _fix_parenthetical(out, t)
 
         # ② 带前缀变体
         if t.prefix_variants and is_abbrev_term(t.term) and has_cjk(t.zh):
-            def _sub(m, _zh=t.zh):
+            def _sub_prefix(m, _zh=t.zh):
                 return PREFIX_ZH.get(m.group(1).lower(), m.group(1)) + _zh
-            out = t.prefixed_regex().sub(_sub, out)
+            out = t.prefixed_regex().sub(_sub_prefix, out)
 
-        # ③ 英文原词
-        out = re.sub(rf"(?<![A-Za-z]){re.escape(t.term)}(?![A-Za-z])", t.zh, out)
+        # ③ 英文原词（带语境保护）
+        out = _replace_term_token(out, t)
 
         # ④ 同义别名
-        for alias in t.aliases:
-            if alias and alias != t.zh:
+        for alias in sorted(t.aliases, key=len, reverse=True):
+            if alias and alias != t.zh and alias != t.term:
                 out = out.replace(alias, t.zh)
     return out
 

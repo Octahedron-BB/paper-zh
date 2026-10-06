@@ -1,11 +1,11 @@
 # 文献 → 中文分层伴读与播客生成系统 (paper-zh)
 
-将 Nature Reviews 等高密度英文学术综述 PDF，一键自动化转化为端到端的高质量中文分层伴读与播客有声系统：
+将 Nature Reviews 等高密度英文学术综述（**语义 HTML 网页全文 / 官方 PDF**），一键自动化转化为端到端的高质量中文分层伴读与播客有声系统：
 
 1. **自包含 Web Reader 双向伴读网页**（`data/reader/<doc_id>.html`）—— **单文件零依赖、内嵌音频、逐句变色高亮、点句即播、移动端/PC 全自适应**
-2. **高质量播客朗读音频**（`data/audio/`）—— **多音字发音清洗、毫秒级时间戳、LRC/VTT 字幕**
+2. **高质量播客朗读音频**（`data/audio/`）—— **统计数字听觉化重构、多音字发音清洗、毫秒级时间戳、LRC/VTT 字幕**
 3. **轨A · 忠实全译**（`data/translation/`）—— 学术全译，逐段对照原文
-4. **轨B · 口语讲稿**（`data/script/`）—— 听觉友好、无悬空图表、多音字规避的口语播客稿
+4. **轨B · 口语讲稿**（`data/script/`）—— 极度自然、听觉友好、无悬空图表、数据口语化的专业播客稿
 5. **中英交错对照**（`data/interleave/`）—— VS Code 侧边栏沉浸式中英对照
 
 ---
@@ -14,11 +14,15 @@
 
 - [一、核心特性](#一核心特性)
 - [二、快速开始](#二快速开始)
+  - [1. 环境准备](#1-环境准备)
+  - [2. 配置 API 凭证与机构反代（可选）](#2-配置-api-凭证与机构反代可选)
+  - [3. 一键运行命令（双轨输入）](#3-一键运行命令双轨输入)
 - [三、目录结构](#三目录结构)
 - [四、产物矩阵与使用指南](#四产物矩阵与使用指南)
 - [五、配置与定制指南](#五配置与定制指南)
-  - [1. 术语表体系与缓存机制](#1-术语表体系与缓存机制)
-  - [2. 多音字与专业发音清洗](#2-多音字与专业发音清洗)
+  - [1. 术语自动化挖掘与跨文献沉淀飞轮](#1-术语自动化挖掘与跨文献沉淀飞轮)
+  - [2. 语境智能保护的零成本硬替换](#2-语境智能保护的零成本硬替换)
+  - [3. 多音字与专业发音清洗](#3-多音字与专业发音清洗)
 - [六、质量检验与测试](#六质量检验与测试)
 - [七、文献速览（可选模块）](#七文献速览可选模块)
 - [八、常见问题 (FAQ)](#八常见问题-faq)
@@ -30,12 +34,20 @@
 
 ## 一、核心特性
 
-- **端到端一键生成**：从原始 PDF 到包含音频的单文件伴读网页，单条命令全自动完成。
-- **自包含零依赖（Zero Dependency）**：输出的 Web Reader 网页将音频（Base64）、样式与高精度时间戳完全打包在单个 HTML 文件内，断网可用、可直接传输至手机/平板浏览器打开。
-- **毫秒级卡拉OK逐句联动**：播放时段落平滑居中滚动，当前朗读的单句实时变色高亮；点击讲稿任意句子瞬间精准起播。
-- **多音字双保险引擎**：提示词源头口语规避 + 专有词底层同音注音清洗，确保声音引擎发音标准，同时界面文字 100% 保持纯正学术规范。
-- **全平台自适应交互**：PC 端支持空格快捷键与目录抽屉；移动端重构为大拇指分段切换器与居中大按键控制台，完美适配全面屏手势条并支持**锁屏控制与后台播放**。
-- **段级 LLM 缓存与术语复利**：支持多级作用域术语覆盖，修改硬替换术语零 API 成本、立刻生效。
+- **双轨输入架构（Dual-Input Engine）**：
+  - **语义 HTML 优先（⭐强烈推荐）**：直接解析学术期刊官方语义 HTML 树结构，**彻底消除跨页断句断词、多栏穿插与页眉假标题**，分段精度达 100%。支持机构反代自动抓取或浏览器右键“另存为”。
+  - **健壮 PDF 保底**：集成加固版版面分析算法，具备众数字号自适应、两栏边界识别与页眉页脚物理边距过滤（杜绝 `## Primer` 等假标题）。
+- **专业术语“挖掘-审核-沉淀”自动化飞轮**：
+  - 1 秒自动提取正文权威缩写全称定义（首字母校验保障，如 `IBS -> Irritable bowel syndrome`）。
+  - LLM 批量匹配规范医学译名与别名，一键生成单篇术语表 `glossary-d/<doc_id>.yaml`。
+  - 支持单篇优秀术语**一键提升（Promote）**至全局 `glossary.yaml`，跨文献滚雪球式复利积累。
+- **语境智能保护的零成本硬替换**：
+  - 严格按术语长度降序替换（避免 `IBS-C` 被 `IBS` 破坏）。
+  - 内置负向语境保护，在“缩写为 / 简称为”等定义语境下自动保留英文缩写，杜绝“英文缩写为 肠易激综合征”等机械替换失误；保护学术括号 `肠易激综合征（IBS）`。
+- **播客自然度升级（Auditory Friendly）**：
+  - 统计数字口语化改造：把生硬的 `p < 0.001, OR = 2.45 (95% CI 1.34-4.50)` 自动重构为直观事实描述，避免听觉过载。
+  - 英文缩写发音优化：字母间自动注入停顿空格（如 `I B S`），TTS 发音清晰悦耳不连读。
+- **自包含零依赖 Web Reader**：输出单文件伴读网页，内嵌 Base64 音频、卡拉OK逐句变色高亮、点句即播，完美支持 PC/移动端并支持系统锁屏后台发声。
 
 ---
 
@@ -54,7 +66,7 @@ cd paper-zh
 pip install -r requirements.txt
 ```
 
-### 2. 配置 API 凭证
+#### 2. 配置 API 凭证与机构反代（可选）
 
 复制配置模板 `.env.example` 为 `.env`，填入 LLM 服务商密钥：
 
@@ -62,15 +74,35 @@ pip install -r requirements.txt
 # 支持 deepseek（默认推荐）/ openai / gemini / 任意兼容端点
 LLM_PROVIDER=deepseek
 DEEPSEEK_API_KEY=sk-your-api-key-here
+
+# 可选：高校/机构学术反代（支持通过网关一键拉取 Nature 语义 HTML 全文）
+# ACADEMIC_PROXY_BASE_URL=https://your-institution-proxy.edu.cn
+# ACADEMIC_PROXY_COOKIE='your_session_cookie'
 ```
 
-### 3. 一键运行命令
+### 3. 一键运行命令（双轨输入）
 
+系统支持 **HTML 网页全文优先** 与 **传统 PDF 保底** 两种输入模式：
+
+#### 方式 A：网页版 HTML 模式（⭐ 强烈推荐，排版与分段 100% 完美）
 ```bash
-# 1) 将文献 PDF 放置在 papers/ 目录下（如 s41575-024-00932-1.pdf）
+# 1) 获取文献 HTML 全文（二选一）：
+#    - 自动拉取（若配置了机构代理）：
+python tools/fetch_paper.py s41572-026-00741-7
+#    - 手工保存：在期刊官网网页按 Ctrl+S / 右键“另存为”，保存至 papers/s41572-026-00741-7.html
 
-# 2) 全流程端到端执行（分段 -> 翻译 -> 讲稿 -> 对照 -> 语音 -> Web Reader）
-python tools/run_pipeline.py --pdf s41575-024-00932-1
+# 2) 一键自动挖掘专业术语缩写（生成 glossary-d/ 专属初稿）：
+python tools/extract_terms.py s41572-026-00741-7
+
+# 3) 全流程端到端执行（分段 -> 双轨翻译 -> 讲稿口语化 -> 语音合成 -> Web Reader 打包）：
+python tools/run_pipeline.py s41572-026-00741-7
+```
+
+#### 方式 B：PDF 模式（通用保底）
+```bash
+# 1) 将文献 PDF 放置在 papers/ 目录下（如 papers/vieta2018.pdf）
+# 2) 全流程端到端执行：
+python tools/run_pipeline.py --pdf vieta2018
 
 # 3) 批量自动处理 papers/ 下的所有 PDF 文献：
 python tools/run_pipeline.py --all
@@ -80,7 +112,9 @@ python tools/run_pipeline.py --all
 
 | 参数 | 示例 | 说明 |
 | :--- | :--- | :--- |
-| `--pdf` | `--pdf vieta2018` | 指定 PDF（支持文件名、doc_id 或绝对路径，自动补 `.pdf`） |
+| 文献指定 | `s41572-026-00741-7` | 自动匹配 `papers/` 下的 HTML 或 PDF（HTML 优先） |
+| `--html` | `--html s41572...` | 显式强制使用 HTML 网页分段引擎 |
+| `--pdf` | `--pdf vieta2018` | 显式强制使用 PDF 分段引擎 |
 | `--all` | `--all` | 批量模式，自动循环处理 `papers/` 目录下的所有文献 |
 | `--stage` | `--stage audio` | 单步运行指定阶段：`segment` / `translate` / `script` / `interleave` / `audio` / `reader` / `all` |
 | `--limit` | `--limit 3` | 仅处理前 N 个段落（用于快速验证翻译与发音质量） |
@@ -105,7 +139,7 @@ paper-zh/
 │   ├─ README.md              # 范例说明文档
 │   └─ s41574-022-00638-x/    # 42.7分钟伴读网页与音频示例
 │
-├─ papers/                    # 输入目录：存放待处理 PDF 文献（git 忽略）
+├─ papers/                    # 输入目录：存放待处理 HTML 或 PDF 文献（git 忽略）
 │   └─ inbox/                 # 文献速览用：手工下载的 PDF 先丢这里（自动认领，待实现）
 ├─ data/                      # 产物输出目录（全部自动生成，git 忽略）
 │   ├─ reader/<id>.html       # ★ 自包含双向伴读网页（双击即开）
@@ -118,7 +152,9 @@ paper-zh/
 │   └─ cache/                 # 段落级 LLM 响应缓存
 │
 ├─ tools/                     # 命令行工具入口
-│   ├─ run_pipeline.py        # ★ 端到端主工作流入口
+│   ├─ run_pipeline.py        # ★ 端到端主工作流入口（双轨自适应）
+│   ├─ fetch_paper.py         # ★ 学术机构代理 HTML 全文自动拉取工具
+│   ├─ extract_terms.py       # ★ 专业术语与缩写自动化挖掘及提升沉淀工具
 │   ├─ build_digest.py        # ★ 文献速览：PubMed 检索 → 两级提要 → 手机 HTML/MD
 │   ├─ push_digest.py         # ★ 文献速览：把某一期推送到微信 / Telegram / Discord
 │   ├─ build_audio.py         # 语音合成与时间戳对齐工具
@@ -130,33 +166,34 @@ paper-zh/
 │   └─ batch_segment.py       # 批量分段健康度检查
 │
 ├─ src/                       # 核心业务模块
-│   ├─ docs.py                # ★ 文档自动发现（papers/ 与各产物目录里有哪些文献）
-│   ├─ feed.py                # 文献速览：PubMed 增量检索与状态库
-│   ├─ push.py                # 推送渠道（PushPlus / Telegram / Discord）
-│   ├─ runlog.py              # 工具自记日志（定时任务无需 shell 重定向）
-│   ├─ model.py               # 文档/节/段数据结构与 slug（节路径）规则
-│   ├─ segment.py             # PDF 版式分析与多栏提取算法
+│   ├─ docs.py                # ★ 文档自动发现（HTML + PDF 双轨识别）
+│   ├─ fetcher.py             # 机构代理网络拉取器
+│   ├─ segment_html.py        # ★ 高保真语义 HTML 分段解析引擎
+│   ├─ segment.py             # PDF 版式分析与多栏提取算法（带页眉过滤）
 │   ├─ translate.py           # 轨A 翻译执行器
 │   ├─ rewrite.py             # 轨B 讲稿重写执行器
-│   ├─ glossary.py            # 术语解析与作用域分发引擎
+│   ├─ glossary.py            # 术语解析、语境保护与作用域分发引擎
 │   ├─ abbrev.py              # 缩写抽取、定义识别与同名异义检测
 │   ├─ polyphone.py           # 多音字发音清洗与正则转换
 │   ├─ textnorm.py            # 中文排版规范化与数字千分位处理
-│   ├─ prompts.py             # 提示词模板与版本控制器
+│   ├─ prompts.py             # 提示词模板与版本控制器（script-v3 数据口语化）
 │   ├─ providers.py           # LLM 供应商抽象（仅用标准库 urllib，零 SDK 依赖）
+│   ├─ feed.py                # 文献速览：PubMed 增量检索与状态库
+│   ├─ push.py                # 推送渠道（PushPlus / Telegram / Discord）
+│   ├─ runlog.py              # 工具自记日志
 │   └─ cache.py               # 段级缓存键与存取
 │
 ├─ devtools/                  # 开发者排错工具
 │   ├─ inspect_lines.py       # PDF 文本行级版式判定探针
-│   ├─ audit_hard_landing.py  # hard_replace 术语到底有没有落地（打印替代写法证据）
-│   └─ audit_term_density.py  # hard_replace 译名是否把译文“刷”得太啰嗦
+│   ├─ audit_hard_landing.py  # hard_replace 术语落地检查
+│   └─ audit_term_density.py  # 术语密度检查
 │
 └─ tests/                     # 离线自动化测试套件（样本自动发现）
-    ├─ test_core.py           # 核心测试（术语表 / 缓存 / 多音字 / 缩写处理）
-    ├─ test_digest.py         # 文献速览测试（快照选取 / 计长口径 / doc_id 推导）
-    ├─ test_push.py           # 推送层测试（渠道选择 / 分片边界 / 不泄漏密钥）
+    ├─ test_core.py           # 核心测试（术语语境保护 / 缓存 / 多音字 / 缩写处理）
     ├─ test_segment.py        # 分段不变量、节路径（slug）规范
-    └─ segment_baseline.json  # 分段基准数字（用 test_segment.py --update 刷新）
+    ├─ test_digest.py         # 文献速览测试
+    ├─ test_push.py           # 推送层测试
+    └─ segment_baseline.json  # 分段基准数据
 ```
 
 ---
@@ -169,7 +206,7 @@ paper-zh/
 | `data/audio/<doc_id>.mp3` | **独立音频流** | 配合主流音频播放器使用，同目录配有 `.lrc` 与 `.vtt` 字幕。 |
 | `data/interleave/<doc_id>.md` | **中英交错对照** | VS Code 打开按 `Ctrl+K V` / `Cmd+K V` 打开预览，通过大纲视图快速精读对照。 |
 | `data/translation/<doc_id>.md` | **中文学术全译** | 逐段忠实翻译，适合快速查阅专业细节。 |
-| `data/script/<doc_id>.md` | **中文口语讲稿** | 听觉友好的口语讲解文稿，去除了图表悬空指涉。 |
+| `data/script/<doc_id>.md` | **中文口语讲稿** | 极度自然、听觉友好的口语讲解文稿，数据通俗化，去除了图表悬空指涉。 |
 
 ### Web Reader 伴读网页交互特性：
 1. **三视图自由切换**：点击顶部切换器可在【中英对照】、【口语讲稿】与【忠实全译】之间无缝切换。
@@ -181,14 +218,33 @@ paper-zh/
 
 ## 五、配置与定制指南
 
-### 1. 术语表体系与缓存机制
+### 1. 术语自动化挖掘与跨文献沉淀飞轮
 
-术语表是本系统跨文献沉淀的核心资产。系统将术语分为两类，其执行成本与处理逻辑截然不同：
+术语表是本系统跨文献沉淀的核心资产。系统构建了**“自动挖掘 → 单篇审核 → 全局沉淀”**的完整飞轮：
 
-- **`mode: hard_replace`（硬替换，默认推荐）**：
-  翻译完成后由引擎进行确定性字符串替换。由于中文无曲折变化，此方式**零 API 消耗、修改后重跑即刻生效**。
-- **`mode: prompt_hint`（上下文注入）**：
-  直接注入 LLM 提示词中（用于解决语义歧义或需要重构句式的情况）。修改此类术语**仅会导致命中该词的特定段落重新翻译**。
+```bash
+# 步骤 1：自动挖掘正文中的缩写与全称定义，调用 LLM 生成权威中文翻译草稿
+python tools/extract_terms.py s41572-026-00741-7
+# 生成：glossary-d/s41572-026-00741-7.yaml
+
+# 步骤 2：对单篇验证优秀的通用医学术语，一键提升（Promote）沉淀至全局主表
+python tools/extract_terms.py s41572-026-00741-7 --promote SIBO
+# 自动迁移至 glossary.yaml，下次读同领域新文献时自动全局生效！
+```
+
+### 2. 语境智能保护的零成本硬替换
+
+术语表支持两种模式：
+- **`mode: hard_replace`（硬替换，默认推荐）**：翻译完成后由引擎进行确定性字符串替换。**零 API 消耗、修改后重跑立刻生效**。
+- **`mode: prompt_hint`（上下文注入）**：直接注入 LLM 提示词中（用于解决语义歧义或需重构句式的情况）。修改此类术语仅重译命中段落。
+
+#### 核心防护机制：
+1. **缩写引述语境保护**：
+   当正文中出现“其英文缩写为 IBS”、“简称为 IBS”时，引擎通过负向环视自动识别引述语境，**强制保留英文原词**，杜绝误替换成“英文缩写为 肠易激综合征”。
+2. **学术英文括号对照保护**：
+   原文出现的 `肠易激综合征（IBS）` 将完整保留中英文对照，不会被暴力抹除。
+3. **长词降序优先**：
+   严格从长到短匹配（如 `IBS-C` 优先于 `IBS` 替换），避免复合术语被破坏。
 
 #### 术语作用域优先级 (`scope`)：
 ```yaml
@@ -464,7 +520,7 @@ python devtools/inspect_lines.py papers/xxx.pdf --grep "Anal cancer" --around 2
 ## 十、版权与数据安全说明
 
 - **合规边界**：学术综述版权归原期刊与作者所有。本项目全套产物（译文、讲稿、音频、HTML 伴读）**仅供个人学习与研究使用**，严禁用于公开分发或商业用途。
-- **Git 隔离防护**：项目 `.gitignore` 已配置严格规则，默认排除所有输入 PDF（`papers/*.pdf`）及所有生成数据（`data/`），防止版权敏感资产意外同步至公开代码仓库。
+- **Git 隔离防护**：项目 `.gitignore` 已配置严格规则，默认排除所有输入文献原件（`papers/*.pdf`、`papers/*.html`）、所有私有代理凭据与缓存文本（`*.cookie`、`*.token`、`session.txt`、`tools/login_proxy.py`）及所有衍生数据（`data/`），防止版权敏感资产与私人凭据意外同步至公开代码仓库。
 
 ---
 

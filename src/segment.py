@@ -27,7 +27,7 @@ from .model import Document, Section, Segment, make_sid, slug
 #    仍然有效而直接复用（实测就撞过这个坑：改了规则但结果没变，因为读的是旧缓存）。
 #    v14：slug() 不再把 ASCII 标点转成 uXXXX 码点，也不再切开转义/单词 ——
 #        节路径（sec_path）会变，必须重新分段才能生效。
-SEGMENTER_VERSION = "seg-v14-slug-atomic"
+SEGMENTER_VERSION = "seg-v15-header-filter"
 BODY_MIN_SHARE = 0.15       # 候选字号至少要占这么多字符份额
 
 # ---- 全部改成数据驱动，不再写死字号区间与栏基线 ----
@@ -282,6 +282,14 @@ def _gather(doc, regions) -> list[_Line]:
 
                 bb = line["bbox"]
                 L.y0, L.x0, L.x1 = round(bb[1], 1), round(bb[0], 1), round(bb[2], 1)
+
+                # 过滤页眉（顶边距 < 55pt）与页脚（底边距 > 750pt）的期刊标识、栏目名及卷期页码
+                norm_raw = raw.lower().strip(" .|:-")
+                if L.y0 < 55.0 and (norm_raw in SKIP_STRINGS or TITLE_SKIP_RE.match(norm_raw)):
+                    continue
+                if L.y0 > 750.0 and ("nature reviews" in norm_raw or "doi.org" in norm_raw):
+                    continue
+
                 cx, cy = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
                 # 先只记“落在某个矩形内”；到底算不算 region，要等推出 body_font 后才知道
                 L.in_rect = any(x0 - 2 <= cx <= x1 + 2 and y0 - 2 <= cy <= y1 + 2
