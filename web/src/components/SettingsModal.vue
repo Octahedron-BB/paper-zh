@@ -1,0 +1,231 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+import { settingsState } from '../store/settings'
+import { KeyRound, Sparkles, Volume2, Globe, ShieldCheck, X } from 'lucide-vue-next'
+
+const emit = defineEmits<{
+  (e: 'close'): void
+}>()
+
+const showApiKey = ref(false)
+
+const voices = [
+  { id: 'zh-TW-HsiaoChenNeural', name: '台湾 · 晓臻 (HsiaoChen) - 亲切自然 · 推荐', lang: 'zh-TW' },
+  { id: 'zh-CN-XiaoxiaoNeural', name: '大陆 · 晓晓 (Xiaoxiao) - 清晰生动', lang: 'zh-CN' },
+  { id: 'zh-CN-YunxiNeural', name: '大陆 · 云希 (Yunxi) - 阳光男声', lang: 'zh-CN' },
+  { id: 'zh-CN-YunjianNeural', name: '大陆 · 云健 (Yunjian) - 沉稳叙事', lang: 'zh-CN' },
+  { id: 'zh-HK-HiuGaaiNeural', name: '香港 · 晓佳 (HiuGaai) - 粤语', lang: 'zh-HK' },
+]
+
+const speedRates = [
+  { label: '慢速 (-15%)', value: '-15%' },
+  { label: '正常 (+0%)', value: '+0%' },
+  { label: '稍快 (+10%)', value: '+10%' },
+  { label: '快速 (+20%)', value: '+20%' },
+]
+
+function handleClearStorage() {
+  if (confirm('确定要清除本地保存的配置项吗？')) {
+    localStorage.removeItem('paper_zh_user_settings')
+    window.location.reload()
+  }
+}
+</script>
+
+<template>
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+      <!-- Header -->
+      <div class="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-100 dark:border-slate-800">
+        <div class="flex items-center gap-2">
+          <div class="p-2 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+            <Sparkles class="w-5 h-5" />
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">运行与模型配置</h2>
+            <p class="text-xs text-slate-500">100% 存储于本地浏览器 localStorage，零后端传输</p>
+          </div>
+        </div>
+        <button
+          @click="emit('close')"
+          class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+        >
+          <X class="w-5 h-5" />
+        </button>
+      </div>
+
+      <div class="p-6 space-y-6 flex-1 text-sm">
+        <!-- 1. LLM 模型与 API Key -->
+        <section class="space-y-4">
+          <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
+            <KeyRound class="w-4 h-4 text-blue-500" />
+            <span>LLM 大语言模型服务 (BYOK)</span>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button
+              v-for="provider in ['deepseek', 'openai', 'gemini', 'custom'] as const"
+              :key="provider"
+              type="button"
+              @click="settingsState.llmProvider = provider"
+              :class="[
+                'py-2 px-3 rounded-xl border text-xs font-semibold capitalize transition text-center',
+                settingsState.llmProvider === provider
+                  ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400'
+                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+              ]"
+            >
+              {{ provider === 'deepseek' ? 'DeepSeek (推荐)' : provider }}
+            </button>
+          </div>
+
+          <!-- API Key Input -->
+          <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+              {{ settingsState.llmProvider.toUpperCase() }} API Key
+            </label>
+            <div class="relative">
+              <input
+                :type="showApiKey ? 'text' : 'password'"
+                v-model="settingsState.apiKey"
+                placeholder="sk-..."
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+              />
+              <button
+                type="button"
+                @click="showApiKey = !showApiKey"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                {{ showApiKey ? '隐藏' : '显示' }}
+              </button>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1">密钥仅在发起翻译请求时直接由浏览器调用对应官方 API，绝不上报第三方服务器。</p>
+          </div>
+
+          <!-- Model Name -->
+          <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+              模型名称 (Model Identifier)
+            </label>
+            <input
+              type="text"
+              v-model="settingsState.model"
+              :placeholder="settingsState.llmProvider === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'"
+              class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 font-mono text-xs"
+            />
+          </div>
+
+          <!-- Custom Base URL -->
+          <div v-if="settingsState.llmProvider === 'custom'">
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+              自定义 API Base URL (OpenAI 兼容协议)
+            </label>
+            <input
+              type="text"
+              v-model="settingsState.customBaseUrl"
+              placeholder="https://api.yourproxy.com/v1"
+              class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 font-mono text-xs"
+            />
+          </div>
+        </section>
+
+        <hr class="border-slate-100 dark:border-slate-800" />
+
+        <!-- 2. TTS 语音设置 -->
+        <section class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
+              <Volume2 class="w-4 h-4 text-emerald-500" />
+              <span>Edge-TTS 伴读朗读</span>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" v-model="settingsState.enableTts" class="sr-only peer" />
+              <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+            </label>
+          </div>
+
+          <div v-if="settingsState.enableTts" class="space-y-3 pl-1">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">朗读音色</label>
+              <select
+                v-model="settingsState.ttsVoice"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 text-xs"
+              >
+                <option v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">朗读语速</label>
+              <div class="grid grid-cols-4 gap-2">
+                <button
+                  v-for="r in speedRates"
+                  :key="r.value"
+                  type="button"
+                  @click="settingsState.ttsRate = r.value"
+                  :class="[
+                    'py-1.5 px-2 rounded-lg border text-xs text-center transition',
+                    settingsState.ttsRate === r.value
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-semibold'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                  ]"
+                >
+                  {{ r.label }}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="text-xs text-slate-400 italic">
+            已禁用 TTS。工作流将只生成中英对照与口语讲稿文本，节省时间和网络开销。
+          </div>
+        </section>
+
+        <hr class="border-slate-100 dark:border-slate-800" />
+
+        <!-- 3. 高校机构反代 (可选) -->
+        <section class="space-y-3">
+          <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
+            <Globe class="w-4 h-4 text-purple-500" />
+            <span>高校/机构 WebVPN 反代 (可选，仅用于抓取 HTML 全文)</span>
+          </div>
+          <div class="space-y-2">
+            <input
+              type="text"
+              v-model="settingsState.academicProxyUrl"
+              placeholder="https://webvpn.univ.edu.cn"
+              class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 text-xs font-mono"
+            />
+            <p class="text-[11px] text-slate-400">若无反代，可直接在首页上传下载好的 Nature HTML 或 PDF 文件。</p>
+          </div>
+        </section>
+
+        <!-- Privacy Badge -->
+        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800 flex items-start gap-3">
+          <ShieldCheck class="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+          <div class="text-xs text-slate-600 dark:text-slate-400 space-y-1">
+            <p class="font-medium text-slate-800 dark:text-slate-200">100% 隐私安全防护</p>
+            <p>本系统为静态单页应用 (SPA)，所有的文献解析、多语言翻译调用、口语改写和音频合成均直接在您的浏览器客户端运行，不经过任何中间服务器。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+        <button
+          type="button"
+          @click="handleClearStorage"
+          class="text-xs text-rose-500 hover:text-rose-700"
+        >
+          重置配置
+        </button>
+        <button
+          type="button"
+          @click="emit('close')"
+          class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-sm transition"
+        >
+          保存并完成
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
