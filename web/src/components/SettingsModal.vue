@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { settingsState } from '../store/settings'
 import type { TtsProvider } from '../core/types'
+import { synthesizeEdgeTts } from '../core/edgeTts'
 import {
   KeyRound,
   Sparkles,
@@ -17,6 +18,7 @@ const emit = defineEmits<{
 
 const showApiKey = ref(false)
 const isTestingVoice = ref(false)
+const testAudioEl = ref<HTMLAudioElement | null>(null)
 
 const ttsProviders: Array<{
   id: TtsProvider
@@ -30,7 +32,7 @@ const ttsProviders: Array<{
     name: 'Microsoft Edge-TTS / 系统精选',
     badge: '内置推荐 · 免配置',
     badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-    desc: '高质量自然流利人声，台湾晓臻、大陆晓晓等多种口语风格，支持逐句卡拉OK高亮。',
+    desc: '高质量自然流利人声，台湾晓臻、中国晓晓等多种口语风格，支持逐句卡拉OK高亮。',
   },
   {
     id: 'web-speech',
@@ -71,9 +73,9 @@ const ttsProviders: Array<{
 
 const presetVoices = [
   { id: 'zh-TW-HsiaoChenNeural', name: '台湾 · 晓臻 (HsiaoChen) - 亲切自然 · 推荐', lang: 'zh-TW' },
-  { id: 'zh-CN-XiaoxiaoNeural', name: '大陆 · 晓晓 (Xiaoxiao) - 清晰生动', lang: 'zh-CN' },
-  { id: 'zh-CN-YunxiNeural', name: '大陆 · 云希 (Yunxi) - 阳光男声', lang: 'zh-CN' },
-  { id: 'zh-CN-YunjianNeural', name: '大陆 · 云健 (Yunjian) - 沉稳叙事', lang: 'zh-CN' },
+  { id: 'zh-CN-XiaoxiaoNeural', name: '中国 · 晓晓 (Xiaoxiao) - 清晰生动', lang: 'zh-CN' },
+  { id: 'zh-CN-YunxiNeural', name: '中国 · 云希 (Yunxi) - 阳光男声', lang: 'zh-CN' },
+  { id: 'zh-CN-YunjianNeural', name: '中国 · 云健 (Yunjian) - 沉稳叙事', lang: 'zh-CN' },
   { id: 'zh-HK-HiuGaaiNeural', name: '香港 · 晓佳 (HiuGaai) - 粤语', lang: 'zh-HK' },
 ]
 
@@ -116,27 +118,53 @@ const speedRates = [
   { label: '快速 (+20%)', value: '+20%' },
 ]
 
-function testVoicePlayback() {
-  if (!('speechSynthesis' in window)) {
-    alert('当前浏览器不支持语音合成 API')
-    return
-  }
-
-  window.speechSynthesis.cancel()
+async function testVoicePlayback() {
+  stopVoicePlayback()
   isTestingVoice.value = true
 
   const testText = '这是伴读语音试听效果：肠易激综合征是一种常见的脑-肠轴交互障碍。'
-  const u = new SpeechSynthesisUtterance(testText)
 
+  // 1. 如果当前选定的是 Edge-TTS：真正调用云端 Edge-TTS 合成并播放真实 MP3 语音！
+  if (settingsState.ttsProvider === 'edge-tts') {
+    try {
+      const res = await synthesizeEdgeTts(testText, settingsState.ttsVoice, settingsState.ttsRate)
+      if (res.audioBlob && res.audioBlob.size > 0) {
+        const url = URL.createObjectURL(res.audioBlob)
+        const audio = new Audio(url)
+        testAudioEl.value = audio
+        audio.onended = () => {
+          isTestingVoice.value = false
+          URL.revokeObjectURL(url)
+          testAudioEl.value = null
+        }
+        audio.onerror = () => {
+          isTestingVoice.value = false
+          URL.revokeObjectURL(url)
+          testAudioEl.value = null
+        }
+        await audio.play()
+        return
+      }
+    } catch (err: any) {
+      console.warn('Edge-TTS 试听请求遇阻，回退至系统原生语音:', err)
+    }
+  }
+
+  // 2. 浏览器原生 Web Speech API 试听
+  if (!('speechSynthesis' in window)) {
+    alert('当前浏览器不支持语音合成 API')
+    isTestingVoice.value = false
+    return
+  }
+
+  const u = new SpeechSynthesisUtterance(testText)
   const sysVoices = window.speechSynthesis.getVoices()
   const target = settingsState.ttsVoice
 
   let matched: SpeechSynthesisVoice | undefined = undefined
-  // 1. 完全精确匹配
+  // 完全精确匹配
   matched = sysVoices.find((v) => v.name === target || v.voiceURI === target)
-  // 2. 包含匹配
   if (!matched) matched = sysVoices.find((v) => v.name.includes(target) || target.includes(v.name))
-  // 3. 台湾音色
   if (!matched && (target.includes('TW') || target.includes('HsiaoChen') || target.includes('台湾'))) {
     matched = sysVoices.find((v) => {
       const n = v.name.toLowerCase()
@@ -144,7 +172,6 @@ function testVoicePlayback() {
       return l.includes('zh-tw') || l.includes('zh-hk') || n.includes('mei-jia') || n.includes('hanhan') || n.includes('國語')
     })
   }
-  // 4. 男声音色
   if (!matched && (target.includes('Yunxi') || target.includes('Yunjian') || target.includes('男'))) {
     matched = sysVoices.find((v) => {
       const n = v.name.toLowerCase()
@@ -152,7 +179,6 @@ function testVoicePlayback() {
       return l.includes('zh') && (n.includes('kangkang') || n.includes('danny') || n.includes('male') || n.includes('男'))
     })
   }
-  // 5. 粤语
   if (!matched && (target.includes('HK') || target.includes('HiuGaai') || target.includes('粤'))) {
     matched = sysVoices.find((v) => {
       const n = v.name.toLowerCase()
@@ -160,7 +186,6 @@ function testVoicePlayback() {
       return l.includes('zh-hk') || n.includes('sin-ji') || n.includes('粵語') || n.includes('cantonese')
     })
   }
-  // 6. 普通话女声
   if (!matched && (target.includes('Xiaoxiao') || target.includes('CN') || target.includes('女'))) {
     matched = sysVoices.find((v) => {
       const n = v.name.toLowerCase()
@@ -168,7 +193,6 @@ function testVoicePlayback() {
       return l.startsWith('zh-cn') && (n.includes('ting-ting') || n.includes('huihui') || n.includes('yaoyao') || n.includes('普通话'))
     })
   }
-  // 7. 任何中文
   if (!matched) {
     matched = sysVoices.find((v) => v.lang.toLowerCase().includes('zh') || v.lang.toLowerCase().includes('cmn'))
   }
@@ -194,10 +218,17 @@ function testVoicePlayback() {
 }
 
 function stopVoicePlayback() {
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel()
-    isTestingVoice.value = false
+  if (testAudioEl.value) {
+    try {
+      testAudioEl.value.pause()
+      testAudioEl.value.currentTime = 0
+    } catch {}
+    testAudioEl.value = null
   }
+  if ('speechSynthesis' in window) {
+    try { window.speechSynthesis.cancel() } catch {}
+  }
+  isTestingVoice.value = false
 }
 
 function handleClearStorage() {

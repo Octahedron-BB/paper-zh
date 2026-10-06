@@ -1,6 +1,16 @@
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
+import { edgeTtsMiddleware } from './server/edgeTtsServer.ts'
+
+function edgeTtsPlugin(): Plugin {
+  return {
+    name: 'edge-tts-server',
+    configureServer(server) {
+      server.middlewares.use(edgeTtsMiddleware())
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -8,5 +18,6 @@ export default defineConfig({
   plugins: [
     vue(),
     tailwindcss(),
+    edgeTtsPlugin(),
   ],
 })
