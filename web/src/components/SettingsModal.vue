@@ -1,15 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { settingsState } from '../store/settings'
 import type { TtsProvider } from '../core/types'
 import {
   KeyRound,
   Sparkles,
   Volume2,
-  Globe,
   ShieldCheck,
   X,
-  HelpCircle,
+  VolumeX,
 } from 'lucide-vue-next'
 
 const emit = defineEmits<{
@@ -17,7 +16,7 @@ const emit = defineEmits<{
 }>()
 
 const showApiKey = ref(false)
-const showWebVpnGuide = ref(false)
+const isTestingVoice = ref(false)
 
 const ttsProviders: Array<{
   id: TtsProvider
@@ -28,17 +27,17 @@ const ttsProviders: Array<{
 }> = [
   {
     id: 'edge-tts',
-    name: 'Microsoft Edge-TTS',
-    badge: '推荐 · 内置可用',
+    name: 'Microsoft Edge-TTS / 系统精选',
+    badge: '内置推荐 · 免配置',
     badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-    desc: '直接通过浏览器建立连接，微软高保真神经人声，支持逐句时间戳。',
+    desc: '高质量自然流利人声，台湾晓臻、大陆晓晓等多种口语风格，支持逐句卡拉OK高亮。',
   },
   {
     id: 'web-speech',
     name: '浏览器原生 Speech API',
-    badge: '内置 · 完全离线',
+    badge: '完全离线 · 零流量',
     badgeColor: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
-    desc: '调用操作系统本地朗读引擎，无需网络开销，随时可用。',
+    desc: '直接调用操作系统（macOS/Windows/iOS/Android）自带朗读引擎，无需网络。',
   },
   {
     id: 'openai',
@@ -49,7 +48,7 @@ const ttsProviders: Array<{
   },
   {
     id: 'cosyvoice',
-    name: '阿里 CosyVoice / 千问',
+    name: '阿里 CosyVoice / 通义',
     badge: '待适配 · 预留配置',
     badgeColor: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300',
     desc: '中文顶级超自然口语合成引擎，音调与语调极具感染力。',
@@ -70,7 +69,7 @@ const ttsProviders: Array<{
   },
 ]
 
-const voices = [
+const presetVoices = [
   { id: 'zh-TW-HsiaoChenNeural', name: '台湾 · 晓臻 (HsiaoChen) - 亲切自然 · 推荐', lang: 'zh-TW' },
   { id: 'zh-CN-XiaoxiaoNeural', name: '大陆 · 晓晓 (Xiaoxiao) - 清晰生动', lang: 'zh-CN' },
   { id: 'zh-CN-YunxiNeural', name: '大陆 · 云希 (Yunxi) - 阳光男声', lang: 'zh-CN' },
@@ -78,12 +77,79 @@ const voices = [
   { id: 'zh-HK-HiuGaaiNeural', name: '香港 · 晓佳 (HiuGaai) - 粤语', lang: 'zh-HK' },
 ]
 
+const availableVoices = ref(presetVoices)
+
+onMounted(() => {
+  if ('speechSynthesis' in window) {
+    const sysVoices = window.speechSynthesis.getVoices()
+    if (sysVoices.length > 0) {
+      const zhVoices = sysVoices.filter((v) => v.lang.toLowerCase().includes('zh'))
+      if (zhVoices.length > 0) {
+        availableVoices.value = [
+          ...presetVoices,
+          ...zhVoices.map((v) => ({
+            id: v.name,
+            name: `系统 · ${v.name} (${v.lang})`,
+            lang: v.lang,
+          })),
+        ]
+      }
+    }
+  }
+})
+
 const speedRates = [
   { label: '慢速 (-15%)', value: '-15%' },
   { label: '正常 (+0%)', value: '+0%' },
   { label: '稍快 (+10%)', value: '+10%' },
   { label: '快速 (+20%)', value: '+20%' },
 ]
+
+function testVoicePlayback() {
+  if (!('speechSynthesis' in window)) {
+    alert('当前浏览器不支持语音合成 API')
+    return
+  }
+
+  window.speechSynthesis.cancel()
+  isTestingVoice.value = true
+
+  const testText = '这是伴读语音试听效果：肠易激综合征是一种常见的脑-肠轴交互障碍。'
+  const u = new SpeechSynthesisUtterance(testText)
+
+  const sysVoices = window.speechSynthesis.getVoices()
+  const matched = sysVoices.find(
+    (v) =>
+      v.name.includes(settingsState.ttsVoice) ||
+      (settingsState.ttsVoice.includes('TW') && v.lang.includes('TW')) ||
+      v.lang.toLowerCase().startsWith('zh')
+  )
+  if (matched) {
+    u.voice = matched
+    u.lang = matched.lang
+  } else {
+    u.lang = settingsState.ttsVoice.includes('TW') ? 'zh-TW' : 'zh-CN'
+  }
+
+  const rateNum = 1.0 + parseFloat(settingsState.ttsRate.replace('%', '')) / 100.0
+  u.rate = Math.max(0.5, Math.min(2.0, rateNum))
+
+  u.onend = () => {
+    isTestingVoice.value = false
+  }
+  u.onerror = () => {
+    isTestingVoice.value = false
+  }
+
+  window.speechSynthesis.speak(u)
+}
+
+function stopVoicePlayback() {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel()
+    isTestingVoice.value = false
+  }
+}
 
 function handleClearStorage() {
   if (confirm('确定要清除本地保存的配置项吗？')) {
@@ -194,9 +260,23 @@ function handleClearStorage() {
 
         <!-- 2. TTS 伴读引擎设置 (多引擎可选) -->
         <section class="space-y-4">
-          <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
-            <Volume2 class="w-4 h-4 text-emerald-500" />
-            <span>伴读语音合成引擎 (TTS Engine)</span>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
+              <Volume2 class="w-4 h-4 text-emerald-500" />
+              <span>伴读语音合成引擎 (TTS Engine)</span>
+            </div>
+
+            <!-- 试听按钮 -->
+            <button
+              v-if="settingsState.ttsProvider !== 'none'"
+              type="button"
+              @click="isTestingVoice ? stopVoicePlayback() : testVoicePlayback()"
+              class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 text-xs font-medium flex items-center gap-1 transition"
+            >
+              <VolumeX v-if="isTestingVoice" class="w-3.5 h-3.5" />
+              <Volume2 v-else class="w-3.5 h-3.5" />
+              <span>{{ isTestingVoice ? '停止试听' : '🔊 试听发音' }}</span>
+            </button>
           </div>
 
           <!-- 引擎卡片选择器 -->
@@ -222,15 +302,18 @@ function handleClearStorage() {
             </div>
           </div>
 
-          <!-- Edge-TTS 专属配置 -->
-          <div v-if="settingsState.ttsProvider === 'edge-tts'" class="space-y-3 pt-2 bg-slate-50/60 dark:bg-slate-800/40 p-3.5 rounded-xl border border-slate-200/60 dark:border-slate-800">
+          <!-- 音色选择与语速 -->
+          <div v-if="settingsState.ttsProvider !== 'none'" class="space-y-3 pt-2 bg-slate-50/60 dark:bg-slate-800/40 p-3.5 rounded-xl border border-slate-200/60 dark:border-slate-800">
             <div>
-              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Edge-TTS 推荐音色</label>
+              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+                朗读音色选择 (实时试听联动)
+              </label>
               <select
                 v-model="settingsState.ttsVoice"
+                @change="testVoicePlayback()"
                 class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
               >
-                <option v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}</option>
+                <option v-for="v in availableVoices" :key="v.id" :value="v.id">{{ v.name }}</option>
               </select>
             </div>
 
@@ -254,81 +337,9 @@ function handleClearStorage() {
               </div>
             </div>
           </div>
-
-          <!-- 预留其他 TTS (OpenAI / CosyVoice / SiliconFlow) 配置项 -->
-          <div
-            v-else-if="['openai', 'cosyvoice', 'siliconflow'].includes(settingsState.ttsProvider)"
-            class="space-y-3 pt-2 bg-amber-50/40 dark:bg-amber-950/20 p-3.5 rounded-xl border border-amber-200/60 dark:border-amber-900/40"
-          >
-            <div class="text-xs text-amber-800 dark:text-amber-300 font-medium flex items-center gap-1.5">
-              <span>⚠️ 该引擎接口已预留，目前工作流运行中会自动无缝切换至浏览器原生语音播报。</span>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
-                {{ settingsState.ttsProvider.toUpperCase() }} API Key (预留)
-              </label>
-              <input
-                type="password"
-                v-model="settingsState.customTtsApiKey"
-                placeholder="sk-..."
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-mono"
-              />
-            </div>
-          </div>
         </section>
 
-        <hr class="border-slate-100 dark:border-slate-800" />
-
-        <!-- 3. 高校机构 WebVPN 反代指引 -->
-        <section class="space-y-3">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
-              <Globe class="w-4 h-4 text-purple-500" />
-              <span>高校/机构 WebVPN 全文获取 (指南与反代)</span>
-            </div>
-            <button
-              type="button"
-              @click="showWebVpnGuide = !showWebVpnGuide"
-              class="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 flex items-center gap-1"
-            >
-              <HelpCircle class="w-3.5 h-3.5" />
-              <span>{{ showWebVpnGuide ? '收起教程' : '怎么使用？' }}</span>
-            </button>
-          </div>
-
-          <!-- 展开的详细 WebVPN 指南 -->
-          <div
-            v-if="showWebVpnGuide"
-            class="p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 text-xs space-y-2 text-slate-700 dark:text-slate-300 animate-fade-in"
-          >
-            <div class="font-semibold text-purple-900 dark:text-purple-200">📚 为什么以及如何使用高校文献权限：</div>
-            <p>由于 Nature 期刊正文需要高校订阅权限，且浏览器存在跨域安全限制（CORS），推荐以下两种用法：</p>
-            <div class="space-y-1.5 pl-2 border-l-2 border-purple-400">
-              <p>
-                <strong>方法 1（最推荐 · 零门槛）：</strong>
-                在学校 WebVPN 或校园网打开 Nature 论文网页，直接在浏览器按 <kbd class="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border font-mono">Ctrl+S</kbd> / <kbd class="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border font-mono">Cmd+S</kbd>，另存为「网页，仅 HTML」，然后拖入本站首页虚线框，即可完美提取！
-              </p>
-              <p>
-                <strong>方法 2（高级用户）：</strong>
-                配置 Cloudflare Worker 或支持 CORS 透传的代理服务器，并在下方填入反代地址与 WebVPN Cookie（如 <code>wengine_vpn_ticket</code>），即可在网页中直接输入 DOI 一键抓取。
-              </p>
-            </div>
-          </div>
-
-          <div class="space-y-2">
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">
-              自定义 CORS 反代 URL (可选)
-            </label>
-            <input
-              type="text"
-              v-model="settingsState.academicProxyUrl"
-              placeholder="https://your-cors-proxy.workers.dev/?url=https://webvpn.univ.edu.cn"
-              class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 text-xs font-mono"
-            />
-          </div>
-        </section>
-
-        <!-- Privacy Badge -->
+        <!-- Privacy & Tips Badge -->
         <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800 flex items-start gap-3">
           <ShieldCheck class="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
           <div class="text-xs text-slate-600 dark:text-slate-400 space-y-1">

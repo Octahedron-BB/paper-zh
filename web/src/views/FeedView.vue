@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import type { Document, FeedItem } from '../core/types'
-import { fetchPubMedReviews, PRESET_PAPERS } from '../core/pubmed'
+import { fetchPubMedReviews, generateDigest, PRESET_PAPERS } from '../core/pubmed'
+import { settingsState } from '../store/settings'
 import { segmentHtml } from '../core/segmentHtml'
 import { parsePdf } from '../core/pdfParser'
 import { getAllSavedPapers } from '../store/library'
@@ -16,6 +17,7 @@ import {
   CheckCircle2,
   ExternalLink,
   BookOpen,
+  Languages,
 } from 'lucide-vue-next'
 
 const emit = defineEmits<{
@@ -28,6 +30,23 @@ const loading = ref(false)
 const searchQuery = ref('')
 const expandedDoi = ref<Record<string, boolean>>({})
 const savedDocIds = ref<Set<string>>(new Set())
+const displayLang = ref<'zh' | 'en'>('zh')
+const digestingDoi = ref<Record<string, boolean>>({})
+
+async function handleGenerateDigest(item: FeedItem) {
+  const key = item.doi || item.doc_id
+  digestingDoi.value[key] = true
+  try {
+    const res = await generateDigest(item, settingsState)
+    item.title_zh = res.title_zh
+    item.brief = res.brief
+    item.detail = res.detail
+  } catch (err: any) {
+    alert(`AI 提要生成失败，请检查 API 配置: ${err.message}`)
+  } finally {
+    digestingDoi.value[key] = false
+  }
+}
 
 async function refreshSavedStatus() {
   const saved = await getAllSavedPapers()
@@ -208,7 +227,7 @@ function handleActionForFeedItem(item: FeedItem) {
       </div>
     </div>
 
-    <!-- Toolbar: Search & Refresh -->
+    <!-- Toolbar: Search & Refresh & Language -->
     <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
       <div class="relative flex-1 max-w-md">
         <Search class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -220,7 +239,34 @@ function handleActionForFeedItem(item: FeedItem) {
         />
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- 语言显示切换 -->
+        <div class="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px]">
+          <button
+            @click="displayLang = 'zh'"
+            :class="[
+              'px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1',
+              displayLang === 'zh'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            ]"
+          >
+            <Languages class="w-3 h-3" />
+            <span>中文速览</span>
+          </button>
+          <button
+            @click="displayLang = 'en'"
+            :class="[
+              'px-2.5 py-1 rounded-lg font-medium transition',
+              displayLang === 'en'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            ]"
+          >
+            English
+          </button>
+        </div>
+
         <!-- 时间窗口切换 -->
         <div class="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px]">
           <button
@@ -241,7 +287,7 @@ function handleActionForFeedItem(item: FeedItem) {
         <button
           @click="handleRefreshPubMed(selectedDays)"
           :disabled="loading"
-          class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium flex items-center gap-1.5 transition"
+          class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium flex items-center gap-1.5 transition"
         >
           <RefreshCw :class="['w-3.5 h-3.5', loading ? 'animate-spin text-blue-500' : '']" />
           <span>刷新</span>
@@ -277,30 +323,43 @@ function handleActionForFeedItem(item: FeedItem) {
           </div>
         </div>
 
-        <!-- Titles -->
+        <!-- Titles: Chinese first if displayLang === 'zh', otherwise English first -->
         <div>
-          <h3 class="text-base font-bold text-slate-900 dark:text-slate-100 leading-snug">
-            {{ item.title_zh || item.title_en }}
-          </h3>
-          <p class="text-xs text-slate-500 font-serif mt-1">
-            {{ item.title_en }}
-          </p>
+          <template v-if="displayLang === 'zh'">
+            <h3 class="text-base font-bold text-slate-900 dark:text-slate-100 leading-snug">
+              {{ item.title_zh || item.title_en }}
+            </h3>
+            <p v-if="item.title_zh && item.title_zh !== item.title_en" class="text-xs text-slate-500 font-serif mt-1">
+              {{ item.title_en }}
+            </p>
+          </template>
+          <template v-else>
+            <h3 class="text-base font-bold text-slate-900 dark:text-slate-100 leading-snug font-serif">
+              {{ item.title_en }}
+            </h3>
+            <p v-if="item.title_zh && item.title_zh !== item.title_en" class="text-xs text-slate-500 mt-1">
+              {{ item.title_zh }}
+            </p>
+          </template>
         </div>
 
-        <!-- Brief -->
+        <!-- Brief / Abstract preview -->
         <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800/60">
-          {{ item.brief }}
+          <span v-if="displayLang === 'zh'">{{ item.brief || item.abstract || item.detail }}</span>
+          <span v-else class="font-serif">{{ item.abstract || item.brief || item.detail }}</span>
         </p>
 
         <!-- Detail Accordion -->
         <div v-if="expandedDoi[item.doi || item.doc_id]" class="text-xs text-slate-600 dark:text-slate-400 space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800 animate-fade-in">
-          <div class="font-medium text-slate-700 dark:text-slate-300">📌 详细病理机制与要点:</div>
-          <p class="leading-relaxed bg-blue-50/40 dark:bg-blue-950/20 p-2.5 rounded-lg border-l-2 border-blue-500">
-            {{ item.detail }}
-          </p>
+          <div v-if="item.detail && item.detail !== item.brief" class="space-y-1">
+            <div class="font-medium text-slate-700 dark:text-slate-300">📌 机制要点详析:</div>
+            <p class="leading-relaxed bg-blue-50/40 dark:bg-blue-950/20 p-2.5 rounded-lg border-l-2 border-blue-500">
+              {{ item.detail }}
+            </p>
+          </div>
           <div v-if="item.abstract" class="pt-1">
-            <div class="text-[11px] font-semibold text-slate-400">ABSTRACT:</div>
-            <p class="text-[11px] text-slate-500 font-serif leading-relaxed mt-0.5">
+            <div class="text-[11px] font-semibold text-slate-400">PUBMED ABSTRACT:</div>
+            <p class="text-[11px] text-slate-500 font-serif leading-relaxed mt-0.5 whitespace-pre-line">
               {{ item.abstract }}
             </p>
           </div>
@@ -308,14 +367,28 @@ function handleActionForFeedItem(item: FeedItem) {
 
         <!-- Card Footer Actions -->
         <div class="flex items-center justify-between pt-2">
-          <button
-            @click="toggleExpand(item.doi || item.doc_id)"
-            class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 transition"
-          >
-            <span>{{ expandedDoi[item.doi || item.doc_id] ? '收起详情' : '展开详释' }}</span>
-            <ChevronUp v-if="expandedDoi[item.doi || item.doc_id]" class="w-3.5 h-3.5" />
-            <ChevronDown v-else class="w-3.5 h-3.5" />
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              @click="toggleExpand(item.doi || item.doc_id)"
+              class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 transition"
+            >
+              <span>{{ expandedDoi[item.doi || item.doc_id] ? '收起详情' : '展开全文摘要' }}</span>
+              <ChevronUp v-if="expandedDoi[item.doi || item.doc_id]" class="w-3.5 h-3.5" />
+              <ChevronDown v-else class="w-3.5 h-3.5" />
+            </button>
+
+            <!-- AI 提要按钮 (当尚未生成中文导读或需要重新提炼时) -->
+            <button
+              v-if="!item.title_zh || item.title_zh === item.title_en"
+              @click="handleGenerateDigest(item)"
+              :disabled="digestingDoi[item.doi || item.doc_id]"
+              class="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 font-medium flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 transition"
+              title="根据英文摘要由 AI 提炼中文标题和机制导读"
+            >
+              <Sparkles :class="['w-3 h-3', digestingDoi[item.doi || item.doc_id] ? 'animate-spin' : '']" />
+              <span>{{ digestingDoi[item.doi || item.doc_id] ? '提炼中...' : 'AI 生成导读' }}</span>
+            </button>
+          </div>
 
           <div class="flex items-center gap-2">
             <a

@@ -12,6 +12,12 @@ function formatDurationStr(seconds: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
 }
 
+function splitSentences(text: string): string[] {
+  if (!text) return []
+  const matches = text.match(/[^。！？；\n]+[。！？；\n]*/g)
+  return matches && matches.length > 0 ? matches : [text]
+}
+
 export function generateReaderHtml(
   doc: Document,
   translations: Record<string, string>,
@@ -37,7 +43,7 @@ export function generateReaderHtml(
     }
   }
 
-  // 如果没有 timeline，用 doc.segments 构建基础 timeline
+  // 构建完整 timeline
   const effectiveTimeline = timeline.length > 0 ? timeline : doc.segments.map((seg, idx) => ({
     sid: seg.sid,
     sec_path: seg.sec_path,
@@ -72,11 +78,16 @@ export function generateReaderHtml(
     const enSource = sourceMap[sid] || ''
     const safeSidId = sid.replace(/[^a-zA-Z0-9_-]/g, '_')
 
-    // 句级时间戳
-    let zhScriptHtml = zhScript
+    // 切分句级 span，支持高亮与“点哪读哪”
+    let zhScriptHtml = ''
     if (item.sentences && item.sentences.length > 0) {
-      zhScriptHtml = item.sentences.map((s: any) =>
-        `<span class="sentence-span" data-start="${s.start_sec}" data-end="${s.end_sec}" onclick="event.stopPropagation(); jumpToSegment(${s.start_sec}, ${i});">${s.text}</span>`
+      zhScriptHtml = item.sentences.map((s: any, sIdx: number) =>
+        `<span class="sentence-span" data-seg="${i}" data-sen="${sIdx}" data-start="${s.start_sec}" data-end="${s.end_sec}" onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}, ${s.start_sec});">${s.text}</span>`
+      ).join('')
+    } else {
+      const sentenceList = splitSentences(zhScript)
+      zhScriptHtml = sentenceList.map((st: string, sIdx: number) =>
+        `<span class="sentence-span" data-seg="${i}" data-sen="${sIdx}" onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx});">${st}</span>`
       ).join('')
     }
 
@@ -300,16 +311,17 @@ export function generateReaderHtml(
       opacity: 0.85;
     }
 
-    /* Sentence-level Highlight */
+    /* Sentence-level Real-time Highlight (卡拉OK逐句高亮) */
     .sentence-span {
       display: inline;
-      padding: 1px 3px;
+      padding: 2px 4px;
+      margin: 0 1px;
       border-radius: 4px;
-      transition: background-color 0.15s ease, color 0.15s ease;
+      transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
       cursor: pointer;
     }
     .sentence-span:hover {
-      background: var(--primary-light);
+      background: rgba(37, 99, 235, 0.15);
       color: var(--primary);
     }
     .sentence-span.active-sentence {
@@ -317,7 +329,7 @@ export function generateReaderHtml(
       color: #ffffff !important;
       font-weight: 500;
       border-radius: 4px;
-      box-shadow: 0 1px 6px rgba(37, 99, 235, 0.4);
+      box-shadow: 0 1px 6px rgba(37, 99, 235, 0.45);
     }
 
     .badge-tag {
@@ -567,7 +579,7 @@ export function generateReaderHtml(
       <div class="paper-meta">
         <span>📄 ID: ${doc.doc_id}</span>
         <span>⏱️ 总时长: ${formatDuration(totalSec)}</span>
-        <span>🎙️ 模式: ${hasAudio ? `Edge-TTS (${voice})` : '浏览器原生朗读'}</span>
+        <span>🎙️ 音色: ${voice}</span>
         <span>📊 共 ${doc.segments.length} 段</span>
       </div>
     </div>
@@ -637,6 +649,8 @@ export function generateReaderHtml(
     const TIMELINE = ${JSON.stringify(effectiveTimeline)};
     const audio = document.getElementById('main-audio');
     const hasAudioTrack = audio && audio.src && audio.src.startsWith('data:audio');
+    const TARGET_VOICE_NAME = "${voice}";
+
     const iconPlay = document.getElementById('icon-play');
     const iconPause = document.getElementById('icon-pause');
     const trackTitle = document.getElementById('track-title');
@@ -647,10 +661,40 @@ export function generateReaderHtml(
     const overlay = document.getElementById('overlay');
 
     let currentSegmentIndex = 0;
+    let currentSentenceIndex = 0;
     let isSeeking = false;
     let currentSpeed = 1.0;
     let isWebSpeechPlaying = false;
     let speechSynth = window.speechSynthesis;
+    let cachedVoices = [];
+
+    function loadVoices() {
+      if (speechSynth) {
+        cachedVoices = speechSynth.getVoices();
+      }
+    }
+    loadVoices();
+    if (speechSynth && speechSynth.onvoiceschanged !== undefined) {
+      speechSynth.onvoiceschanged = loadVoices;
+    }
+
+    function getMatchedVoice() {
+      if (!cachedVoices || cachedVoices.length === 0) {
+        loadVoices();
+      }
+      // 1. 尝试精确匹配名称
+      let found = cachedVoices.find(v => v.name.includes(TARGET_VOICE_NAME) || TARGET_VOICE_NAME.includes(v.name));
+      // 2. 尝试按语言匹配 (zh-TW 或 zh-CN)
+      if (!found) {
+        const langPref = TARGET_VOICE_NAME.includes('TW') ? 'zh-TW' : 'zh';
+        found = cachedVoices.find(v => v.lang.replace('_', '-').toLowerCase().startsWith(langPref.toLowerCase()));
+      }
+      // 3. 任何中文
+      if (!found) {
+        found = cachedVoices.find(v => v.lang.toLowerCase().includes('zh') || v.lang.toLowerCase().includes('cmn'));
+      }
+      return found || null;
+    }
 
     function formatTime(secs) {
       if (isNaN(secs) || secs < 0) return "00:00";
@@ -669,11 +713,11 @@ export function generateReaderHtml(
       }
     }
 
-    function highlightCard(idx) {
-      if (idx < 0 || idx >= TIMELINE.length) return;
-      currentSegmentIndex = idx;
-      const seg = TIMELINE[idx];
-      trackTitle.innerText = '第 ' + (idx + 1) + ' / ' + TIMELINE.length + ' 段 · ' + (seg.sec_heading || '正文');
+    function highlightCard(segIdx) {
+      if (segIdx < 0 || segIdx >= TIMELINE.length) return;
+      currentSegmentIndex = segIdx;
+      const seg = TIMELINE[segIdx];
+      trackTitle.innerText = '第 ' + (segIdx + 1) + ' / ' + TIMELINE.length + ' 段 · ' + (seg.sec_heading || '正文');
       document.querySelectorAll('.segment-card').forEach(c => c.classList.remove('active'));
       const safeId = (seg.sid || '').replace(/[^a-zA-Z0-9_-]/g, '_');
       const activeCard = document.getElementById('seg-' + safeId);
@@ -688,26 +732,54 @@ export function generateReaderHtml(
       if (activeToc) activeToc.classList.add('active');
     }
 
-    // Web Speech API 朗读段落实现
-    function speakSegmentWebSpeech(idx) {
-      if (!speechSynth) {
-        alert('当前浏览器不支持语音朗读 API');
-        return;
+    function highlightSentence(segIdx, senIdx) {
+      highlightCard(segIdx);
+      currentSentenceIndex = senIdx;
+      document.querySelectorAll('.sentence-span').forEach(s => s.classList.remove('active-sentence'));
+      const targetSpan = document.querySelector('.sentence-span[data-seg="' + segIdx + '"][data-sen="' + senIdx + '"]');
+      if (targetSpan) {
+        targetSpan.classList.add('active-sentence');
+        if (autoScrollToggle && autoScrollToggle.checked) {
+          targetSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
       }
-      if (idx >= TIMELINE.length) {
+    }
+
+    // Web Speech API 句级智能播报 (支持点哪读哪)
+    function speakFromSentence(segIdx, senIdx) {
+      if (!speechSynth) return;
+      speechSynth.cancel();
+
+      if (segIdx >= TIMELINE.length) {
         isWebSpeechPlaying = false;
         updatePlayIcon(false);
         return;
       }
 
-      speechSynth.cancel();
-      highlightCard(idx);
-      const seg = TIMELINE[idx];
-      const textToSpeak = seg.script || seg.src_text || '';
+      const seg = TIMELINE[segIdx];
+      const safeId = (seg.sid || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const card = document.getElementById('seg-' + safeId);
+      const spans = card ? Array.from(card.querySelectorAll('.sentence-span')) : [];
+
+      if (senIdx >= spans.length) {
+        // 进入下一段
+        speakFromSentence(segIdx + 1, 0);
+        return;
+      }
+
+      highlightSentence(segIdx, senIdx);
+      const span = spans[senIdx];
+      const textToSpeak = span ? span.innerText.trim() : (seg.script || seg.src_text || '');
 
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      const matched = getMatchedVoice();
+      if (matched) {
+        utterance.voice = matched;
+        utterance.lang = matched.lang;
+      } else {
+        utterance.lang = TARGET_VOICE_NAME.includes('TW') ? 'zh-TW' : 'zh-CN';
+      }
       utterance.rate = currentSpeed;
-      utterance.lang = 'zh-CN';
 
       utterance.onstart = () => {
         isWebSpeechPlaying = true;
@@ -718,17 +790,14 @@ export function generateReaderHtml(
 
       utterance.onend = () => {
         if (isWebSpeechPlaying) {
-          if (idx + 1 < TIMELINE.length) {
-            speakSegmentWebSpeech(idx + 1);
-          } else {
-            isWebSpeechPlaying = false;
-            updatePlayIcon(false);
-          }
+          speakFromSentence(segIdx, senIdx + 1);
         }
       };
 
       utterance.onerror = (e) => {
-        console.warn('Speech error:', e);
+        if (e.error !== 'canceled' && e.error !== 'interrupted') {
+          console.warn('Speech error:', e);
+        }
         isWebSpeechPlaying = false;
         updatePlayIcon(false);
       };
@@ -744,14 +813,33 @@ export function generateReaderHtml(
           audio.pause();
         }
       } else {
-        // Web Speech 模式
         if (isWebSpeechPlaying) {
           if (speechSynth) speechSynth.cancel();
           isWebSpeechPlaying = false;
           updatePlayIcon(false);
         } else {
-          speakSegmentWebSpeech(currentSegmentIndex);
+          speakFromSentence(currentSegmentIndex, currentSentenceIndex);
         }
+      }
+    }
+
+    function jumpToSentence(segIdx, senIdx, startSec) {
+      if (hasAudioTrack && startSec !== undefined) {
+        audio.currentTime = startSec;
+        audio.play().catch(e => console.log('Play err:', e));
+        highlightSentence(segIdx, senIdx);
+      } else {
+        speakFromSentence(segIdx, senIdx);
+      }
+    }
+
+    function jumpToSegment(startSec, segIdx) {
+      if (hasAudioTrack) {
+        audio.currentTime = startSec;
+        audio.play().catch(e => console.log('Play err:', e));
+        highlightCard(segIdx);
+      } else {
+        speakFromSentence(segIdx, 0);
       }
     }
 
@@ -761,7 +849,7 @@ export function generateReaderHtml(
       } else {
         const nextIdx = deltaSecs > 0 ? currentSegmentIndex + 1 : Math.max(0, currentSegmentIndex - 1);
         if (isWebSpeechPlaying) {
-          speakSegmentWebSpeech(nextIdx);
+          speakFromSentence(nextIdx, 0);
         } else {
           highlightCard(nextIdx);
         }
@@ -772,17 +860,10 @@ export function generateReaderHtml(
       currentSpeed = parseFloat(val);
       if (hasAudioTrack) {
         audio.playbackRate = currentSpeed;
+      } else if (isWebSpeechPlaying) {
+        speakFromSentence(currentSegmentIndex, currentSentenceIndex);
       }
       localStorage.setItem('paper_playback_rate', val);
-    }
-
-    function jumpToSegment(startSec, idx) {
-      if (hasAudioTrack) {
-        audio.currentTime = startSec;
-        audio.play().catch(e => console.log('Play err:', e));
-      } else {
-        speakSegmentWebSpeech(idx);
-      }
     }
 
     function setViewMode(mode) {
@@ -812,11 +893,7 @@ export function generateReaderHtml(
         for (let i = 0; i < TIMELINE.length; i++) {
           if (targetSec >= TIMELINE[i].start_sec) targetIdx = i;
         }
-        if (isWebSpeechPlaying) {
-          speakSegmentWebSpeech(targetIdx);
-        } else {
-          highlightCard(targetIdx);
-        }
+        speakFromSentence(targetIdx, 0);
       }
       isSeeking = false;
     }
@@ -869,6 +946,20 @@ export function generateReaderHtml(
       if (e.code === 'Space' && (e.target === document.body || e.target === document.documentElement)) {
         e.preventDefault();
         togglePlay();
+      }
+    });
+
+    // 页面卸载或关闭事件：彻底停止朗读
+    window.addEventListener('beforeunload', () => {
+      if (speechSynth) speechSynth.cancel();
+      if (audio) audio.pause();
+    });
+
+    window.addEventListener('message', (e) => {
+      if (e.data === 'STOP_AUDIO') {
+        if (speechSynth) speechSynth.cancel();
+        if (audio) audio.pause();
+        updatePlayIcon(false);
       }
     });
 
