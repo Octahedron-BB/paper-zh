@@ -343,16 +343,22 @@ function handleActionForFeedItem(item: FeedItem) {
             v-for="d in [7, 14, 30]"
             :key="d"
             @click="handleRefreshPubMed(d)"
+            :disabled="loading"
             :class="[
-              'px-2.5 py-1 rounded-lg font-medium transition',
+              'px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1',
               selectedDays === d
-                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm font-semibold'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
             ]"
           >
-            {{ d === 7 ? '近一周 (7天)' : `近 ${d} 天` }}
+            <span>{{ d === 7 ? '近一周 (7天)' : `近 ${d} 天` }}</span>
           </button>
         </div>
+
+        <!-- 篇数统计徽标 -->
+        <span class="text-[11px] text-slate-500 dark:text-slate-400 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium shrink-0">
+          共 {{ filteredItems.length }} 篇
+        </span>
 
         <!-- 批量 AI 提要按钮 -->
         <button

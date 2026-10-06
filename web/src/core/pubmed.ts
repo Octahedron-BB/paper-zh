@@ -124,28 +124,29 @@ export async function fetchPubMedReviews(
   days = 7
 ): Promise<FeedItem[]> {
   try {
-    // 依原 feed.py 方案：仅按入库日期窗筛选，不绑死 review[pt]
+    // 依原 feed.py 方案：按入库日期窗筛选
     const query = `(${term}) AND "last ${days} days"[edat]`
+    // 根据天数自适应获取条目数量，使得 7天、14天、30天展现出阶梯式递增的内容丰富度
+    const retmax = days <= 7 ? 20 : (days <= 14 ? 50 : 100)
     const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(
       query
-    )}&retmax=25&retmode=json`
+    )}&retmax=${retmax}&retmode=json`
 
     const res = await fetch(searchUrl)
     if (!res.ok) throw new Error(`PubMed 检索响应异常: ${res.status}`)
     const json = await res.json()
     let idList: string[] = json?.esearchresult?.idlist || []
 
-    // 若近 7 天收录较少（由于 Nature Reviews 为月刊/双周刊出版），平滑扩增至近 30 天以呈现丰富综述
-    if (idList.length < 4 && days < 30) {
+    // 仅在完全没有检索到任何文献且时间窗较短时，才回退至近 30 天保底
+    if (idList.length === 0 && days < 30) {
       const fallbackQuery = `(${term}) AND "last 30 days"[edat]`
       const fallbackUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(
         fallbackQuery
-      )}&retmax=25&retmode=json`
+      )}&retmax=50&retmode=json`
       const fallbackRes = await fetch(fallbackUrl)
       if (fallbackRes.ok) {
         const fallbackJson = await fallbackRes.json()
-        const extraIds: string[] = fallbackJson?.esearchresult?.idlist || []
-        idList = Array.from(new Set([...idList, ...extraIds]))
+        idList = fallbackJson?.esearchresult?.idlist || []
       }
     }
 

@@ -85,18 +85,29 @@ export function generateReaderHtml(
       : splitSentences(zhScript).map((st: string) => ({ text: st }))
 
     const zhTransHtml = transSentences.map((st: string, sIdx: number) => {
-      const matchScript = scriptSentences[sIdx]
-      const sStart = matchScript?.start_sec !== undefined ? matchScript.start_sec : undefined
-      const startAttr = sStart !== undefined ? `data-start="${sStart}"` : ''
-      return `<span class="sentence-span trans-span" data-seg="${i}" data-sen="${sIdx}" ${startAttr} onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}${sStart !== undefined ? `, ${sStart}` : ''});">${st}</span>`
+      let sStart: number | undefined
+      let sEnd: number | undefined
+      if (sIdx < scriptSentences.length && scriptSentences[sIdx].start_sec !== undefined) {
+        sStart = scriptSentences[sIdx].start_sec
+        sEnd = scriptSentences[sIdx].end_sec
+      } else {
+        const segStart = item.start_sec || (i * 6)
+        const segDur = item.duration_sec || 6
+        const totalChars = transSentences.reduce((acc, s) => acc + s.length, 0) || 1
+        const frac = st.length / totalChars
+        sStart = segStart
+        sEnd = segStart + segDur * frac
+      }
+      const startAttr = sStart !== undefined ? `data-start="${sStart.toFixed(2)}" data-end="${(sEnd !== undefined ? sEnd : sStart + 3).toFixed(2)}"` : ''
+      return `<span class="sentence-span trans-span" data-seg="${i}" data-sen="${sIdx}" ${startAttr} onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}${sStart !== undefined ? `, ${sStart.toFixed(2)}` : ''});">${st}</span>`
     }).join('')
 
     const zhScriptHtml = scriptSentences.map((s: any, sIdx: number) => {
       const sText = typeof s === 'string' ? s : s.text
       const sStart = s.start_sec !== undefined ? s.start_sec : undefined
       const sEnd = s.end_sec !== undefined ? s.end_sec : undefined
-      const startAttr = sStart !== undefined ? `data-start="${sStart}" data-end="${sEnd}"` : ''
-      return `<span class="sentence-span script-span" data-seg="${i}" data-sen="${sIdx}" ${startAttr} onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}${sStart !== undefined ? `, ${sStart}` : ''});">${sText}</span>`
+      const startAttr = sStart !== undefined ? `data-start="${sStart.toFixed(2)}" data-end="${(sEnd !== undefined ? sEnd : sStart + 3).toFixed(2)}"` : ''
+      return `<span class="sentence-span script-span" data-seg="${i}" data-sen="${sIdx}" ${startAttr} onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}${sStart !== undefined ? `, ${sStart.toFixed(2)}` : ''});">${sText}</span>`
     }).join('')
 
     contentBlocks.push(`
@@ -322,14 +333,14 @@ export function generateReaderHtml(
     /* Sentence-level Real-time Highlight (卡拉OK逐句高亮) */
     .sentence-span {
       display: inline;
-      padding: 2px 4px;
-      margin: 0 1px;
+      padding: 1px 2px;
+      margin: 0;
       border-radius: 4px;
       transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
       cursor: pointer;
     }
     .sentence-span:hover {
-      background: rgba(37, 99, 235, 0.15);
+      background: rgba(37, 99, 235, 0.12);
       color: var(--primary);
     }
     .sentence-span.active-sentence {
@@ -337,7 +348,7 @@ export function generateReaderHtml(
       color: #ffffff !important;
       font-weight: 500;
       border-radius: 4px;
-      box-shadow: 0 1px 6px rgba(37, 99, 235, 0.45);
+      box-shadow: 0 1px 6px rgba(37, 99, 235, 0.35);
     }
 
     .badge-tag {
@@ -1002,12 +1013,16 @@ export function generateReaderHtml(
 
         const curCard = document.querySelector('.segment-card.active');
         if (curCard) {
-          const spans = curCard.querySelectorAll('.sentence-span');
+          const isScriptMode = document.body.classList.contains('view-script');
+          const selector = isScriptMode ? '.script-span' : '.trans-span';
+          let spans = curCard.querySelectorAll(selector);
+          if (spans.length === 0) spans = curCard.querySelectorAll('.sentence-span');
+
           let activeSpan = null;
           for (const span of spans) {
             const sStart = parseFloat(span.dataset.start);
             const sEnd = parseFloat(span.dataset.end);
-            if (cur >= sStart && cur <= sEnd) {
+            if (!isNaN(sStart) && !isNaN(sEnd) && cur >= sStart && cur <= sEnd) {
               activeSpan = span;
               break;
             }

@@ -107,6 +107,151 @@ export async function runDocumentPipeline(
     const audioBlobs: Blob[] = []
     let combinedAudioBase64 = ''
 
+async function getAudioBlobDuration(blob: Blob): Promise<number> {
+  // 1. Web Audio API 物理音频解码 (微秒级精确计算)
+  try {
+    const arrayBuffer = await blob.arrayBuffer()
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+    if (AudioContextClass) {
+      const ctx = new AudioContextClass()
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
+      const dur = audioBuffer.duration
+      ctx.close()
+      if (dur > 0 && isFinite(dur)) return dur
+    }
+  } catch {
+    // 降级使用 HTMLAudioElement metadata
+  }
+
+  // 2. HTMLAudioElement 回退
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      audio.onloadedmetadata = () => {
+        const d = audio.duration
+        URL.revokeObjectURL(url)
+        resolve(isFinite(d) && d > 0 ? d : 0)
+      }
+      audio.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve(0)
+      }
+    } catch {
+      resolve(0)
+    }
+  })
+}
+
+function splitTextIntoSentences(text: string): string[] {
+  if (!text) return []
+  const matches = text.match(/[^。！？；\n]+[。！？；\n]*/g)
+  return matches && matches.length > 0 ? matches.map((s) => s.trim()).filter(Boolean) : [text.trim()]
+}
+
+function alignSentencesWithTimestamps(
+  sentences: string[],
+  wordTimestamps: { text: string; offsetSec: number; durationSec: number }[],
+  segStartSec: number,
+  segDurationSec: number
+): { text: string; start_sec: number; end_sec: number }[] {
+  if (sentences.length === 0) return []
+
+  const fullText = sentences.join('')
+  const totalChars = fullText.length || 1
+
+  // 若无字词时间戳，按句子字数比例平滑均分该段物理时长
+  if (!wordTimestamps || wordTimestamps.length === 0) {
+    let cur = segStartSec
+    return sentences.map((st, idx) => {
+      const frac = st.length / totalChars
+      const dur = idx === sentences.length - 1 ? (segStartSec + segDurationSec - cur) : (segDurationSec * frac)
+      const sStart = cur
+      const sEnd = cur + dur
+      cur = sEnd
+      return { text: st, start_sec: sStart, end_sec: sEnd }
+    })
+  }
+
+  // 1. 建立各完整自然句在全文中的字符起止区间
+  let charCursor = 0
+  const sentenceRanges = sentences.map((st) => {
+    const startChar = charCursor
+    const endChar = charCursor + st.length
+    charCursor = endChar
+    return { text: st, startChar, endChar }
+  })
+
+  // 2. 将 WordBoundary 词/字时间戳顺序对齐到全文字符位置
+  let searchPos = 0
+  const mappedWords: { startChar: number; endChar: number; offsetSec: number; endSec: number }[] = []
+  for (const wt of wordTimestamps) {
+    if (!wt.text) continue
+    const idx = fullText.indexOf(wt.text, searchPos)
+    if (idx !== -1) {
+      mappedWords.push({
+        startChar: idx,
+        endChar: idx + wt.text.length,
+        offsetSec: wt.offsetSec,
+        endSec: wt.offsetSec + wt.durationSec,
+      })
+      searchPos = idx + wt.text.length
+    }
+  }
+
+  // 3. 聚合各句对应的起始与结束时间戳（以完整句为粒度）
+  const result: { text: string; start_sec: number; end_sec: number }[] = []
+
+  for (let i = 0; i < sentenceRanges.length; i++) {
+    const sr = sentenceRanges[i]
+    const matched = mappedWords.filter(
+      (w) => (w.startChar >= sr.startChar && w.startChar < sr.endChar) ||
+             (w.endChar > sr.startChar && w.endChar <= sr.endChar)
+    )
+
+    let relStart = 0
+    let relEnd = 0
+
+    if (matched.length > 0) {
+      relStart = matched[0].offsetSec
+      relEnd = matched[matched.length - 1].endSec
+    } else {
+      if (i === 0) {
+        relStart = 0
+      } else {
+        relStart = result[i - 1].end_sec - segStartSec
+      }
+      relEnd = relStart + (sr.text.length / totalChars) * segDurationSec
+    }
+
+    result.push({
+      text: sr.text,
+      start_sec: segStartSec + relStart,
+      end_sec: segStartSec + relEnd,
+    })
+  }
+
+  // 4. 单调平滑校正：消除因朗读微顿或标点停顿造成的时间跳跃或倒退
+  for (let i = 0; i < result.length - 1; i++) {
+    if (result[i].end_sec < result[i + 1].start_sec) {
+      result[i].end_sec = result[i + 1].start_sec
+    }
+    if (result[i].end_sec > result[i + 1].start_sec) {
+      result[i + 1].start_sec = result[i].end_sec
+    }
+  }
+
+  if (result.length > 0) {
+    result[0].start_sec = Math.min(result[0].start_sec, segStartSec)
+    result[result.length - 1].end_sec = Math.max(
+      result[result.length - 1].end_sec,
+      segStartSec + segDurationSec
+    )
+  }
+
+  return result
+}
+
     if (settings.enableTts && settings.ttsProvider === 'edge-tts') {
       emit('audio', 0, totalSegs, '正在调用 Edge-TTS 生成沉浸式全篇朗读与时间戳...')
       let cumulativeTimeSec = 0
@@ -124,17 +269,28 @@ export async function runDocumentPipeline(
             settings.ttsRate
           )
 
-          const segDuration = ttsRes.durationSec > 0 ? ttsRes.durationSec : Math.max(3, scriptText.length * 0.25)
+          // 核心校准：使用真实 MP3 音频二进制流的物理采样时长，彻底消除累积时间轴漂移
+          let trueAudioDur = 0
+          if (ttsRes.audioBlob && ttsRes.audioBlob.size > 0) {
+            trueAudioDur = await getAudioBlobDuration(ttsRes.audioBlob)
+          }
+
+          const segDuration = trueAudioDur > 0
+            ? trueAudioDur
+            : (ttsRes.durationSec > 0 ? ttsRes.durationSec : Math.max(3, scriptText.length * 0.28))
+
           const startSec = cumulativeTimeSec
           const endSec = startSec + segDuration
           cumulativeTimeSec = endSec
 
-          // 组织句级时间戳
-          const sentences = ttsRes.timestamps.map((t) => ({
-            text: t.text,
-            start_sec: startSec + t.offsetSec,
-            end_sec: startSec + t.offsetSec + t.durationSec,
-          }))
+          // 聚合为自然完整句时间戳（彻底避免字级/词级碎片化展示）
+          const rawSentences = splitTextIntoSentences(scriptText)
+          const sentences = alignSentencesWithTimestamps(
+            rawSentences,
+            ttsRes.timestamps,
+            startSec,
+            segDuration
+          )
 
           timeline.push({
             sid: seg.sid,
@@ -152,10 +308,17 @@ export async function runDocumentPipeline(
           }
         } catch (err: any) {
           emit('audio', i + 1, totalSegs, `段落 ${seg.sid} TTS 合成受限: ${err.message}，启用浏览器朗读后备`)
-          const estDuration = Math.max(3, scriptText.length * 0.25)
+          const estDuration = Math.max(3, scriptText.length * 0.28)
           const startSec = cumulativeTimeSec
           const endSec = startSec + estDuration
           cumulativeTimeSec = endSec
+          const rawSentences = splitTextIntoSentences(scriptText)
+          const sentences = alignSentencesWithTimestamps(
+            rawSentences,
+            [],
+            startSec,
+            estDuration
+          )
           timeline.push({
             sid: seg.sid,
             sec_path: seg.sec_path,
@@ -164,7 +327,7 @@ export async function runDocumentPipeline(
             end_sec: endSec,
             duration_sec: estDuration,
             script: scriptText,
-            sentences: [],
+            sentences,
           })
         }
       }
