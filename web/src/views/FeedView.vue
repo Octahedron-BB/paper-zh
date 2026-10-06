@@ -34,6 +34,48 @@ const displayLang = ref<'zh' | 'en'>('zh')
 const digestingDoi = ref<Record<string, boolean>>({})
 const isBatchDigesting = ref(false)
 
+interface CachedDigest {
+  title_zh: string
+  brief: string
+  detail: string
+  updated_at: number
+}
+
+const DIGEST_STORAGE_KEY = 'paper_zh_ai_digests_cache'
+
+function getDigestCache(): Record<string, CachedDigest> {
+  try {
+    const raw = localStorage.getItem(DIGEST_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch (e) {
+    return {}
+  }
+}
+
+function saveItemDigest(key: string, digest: CachedDigest) {
+  try {
+    const cache = getDigestCache()
+    cache[key] = digest
+    localStorage.setItem(DIGEST_STORAGE_KEY, JSON.stringify(cache))
+  } catch (e) {
+    console.error('Failed to save digest cache:', e)
+  }
+}
+
+function applyCachedDigests(list: FeedItem[]) {
+  const cache = getDigestCache()
+  for (const item of list) {
+    const k1 = item.doi
+    const k2 = item.doc_id
+    const cached = (k1 && cache[k1]) || (k2 && cache[k2])
+    if (cached) {
+      if (cached.title_zh) item.title_zh = cached.title_zh
+      if (cached.brief) item.brief = cached.brief
+      if (cached.detail) item.detail = cached.detail
+    }
+  }
+}
+
 async function handleGenerateDigest(item: FeedItem) {
   const key = item.doi || item.doc_id
   digestingDoi.value[key] = true
@@ -42,6 +84,12 @@ async function handleGenerateDigest(item: FeedItem) {
     item.title_zh = res.title_zh
     item.brief = res.brief
     item.detail = res.detail
+    saveItemDigest(key, {
+      title_zh: res.title_zh,
+      brief: res.brief,
+      detail: res.detail,
+      updated_at: Date.now(),
+    })
   } catch (err: any) {
     alert(`AI 提要生成失败，请检查 API 配置: ${err.message}`)
   } finally {
@@ -79,6 +127,7 @@ async function handleRefreshPubMed(days = selectedDays.value) {
   selectedDays.value = days
   try {
     const list = await fetchPubMedReviews('"Nat Rev*"[jour]', days)
+    applyCachedDigests(list)
     items.value = list
   } finally {
     loading.value = false
@@ -99,7 +148,9 @@ const filteredItems = computed(() => {
 })
 
 onMounted(async () => {
-  items.value = PRESET_PAPERS
+  const presetList = [...PRESET_PAPERS]
+  applyCachedDigests(presetList)
+  items.value = presetList
   await refreshSavedStatus()
   // 自动拉取近 7 天的最新 Nature Reviews
   handleRefreshPubMed(7)

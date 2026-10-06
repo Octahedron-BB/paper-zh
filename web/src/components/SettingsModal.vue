@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { settingsState } from '../store/settings'
 import type { TtsProvider } from '../core/types'
 import { synthesizeEdgeTts } from '../core/edgeTts'
@@ -71,34 +71,72 @@ const ttsProviders: Array<{
   },
 ]
 
-const presetVoices = [
-  { id: 'zh-TW-HsiaoChenNeural', name: '台湾 · 晓臻 (HsiaoChen) - 亲切自然 · 推荐', lang: 'zh-TW' },
-  { id: 'zh-CN-XiaoxiaoNeural', name: '中国 · 晓晓 (Xiaoxiao) - 清晰生动', lang: 'zh-CN' },
-  { id: 'zh-CN-YunxiNeural', name: '中国 · 云希 (Yunxi) - 阳光男声', lang: 'zh-CN' },
-  { id: 'zh-CN-YunjianNeural', name: '中国 · 云健 (Yunjian) - 沉稳叙事', lang: 'zh-CN' },
-  { id: 'zh-HK-HiuGaaiNeural', name: '香港 · 晓佳 (HiuGaai) - 粤语', lang: 'zh-HK' },
+const edgePresetVoices = [
+  { id: 'zh-TW-HsiaoChenNeural', name: '微软 · 晓臻 (台湾腔 · 亲切自然 · 推荐)', lang: 'zh-TW' },
+  { id: 'zh-CN-XiaoxiaoNeural', name: '微软 · 晓晓 (中国 · 清晰生动)', lang: 'zh-CN' },
+  { id: 'zh-CN-YunxiNeural', name: '微软 · 云希 (中国 · 阳光男声)', lang: 'zh-CN' },
+  { id: 'zh-CN-YunjianNeural', name: '微软 · 云健 (中国 · 沉稳叙事)', lang: 'zh-CN' },
+  { id: 'zh-HK-HiuGaaiNeural', name: '微软 · 晓佳 (香港 · 粤语温柔)', lang: 'zh-HK' },
 ]
 
-const availableVoices = ref(presetVoices)
+const cosyPresetVoices = [
+  { id: 'cosyvoice-longxiaochun', name: 'CosyVoice · 龙小淳 (女声叙事 · 预留)', lang: 'zh-CN' },
+  { id: 'cosyvoice-longxiaobai', name: 'CosyVoice · 龙小白 (沉稳男声 · 预留)', lang: 'zh-CN' },
+]
+
+const siliconflowPresetVoices = [
+  { id: 'siliconflow-indextts-male', name: 'IndexTTS · 智臻学者 (深度男声 · 预留)', lang: 'zh-CN' },
+  { id: 'siliconflow-indextts-female', name: 'IndexTTS · 晨曦学姐 (清晰女声 · 预留)', lang: 'zh-CN' },
+]
+
+const systemVoices = ref<{ id: string; name: string; lang: string }[]>([])
 
 function populateVoices() {
   if (!('speechSynthesis' in window)) return
   const sysVoices = window.speechSynthesis.getVoices()
   if (sysVoices.length > 0) {
     const zhVoices = sysVoices.filter((v) => v.lang.toLowerCase().includes('zh') || v.lang.toLowerCase().includes('cmn'))
-    const uniqueVoices = [
-      ...presetVoices,
-      ...zhVoices.map((v) => ({
-        id: v.name,
-        name: `系统原生 · ${v.name} (${v.lang})`,
-        lang: v.lang,
-      })),
-    ]
-    const map = new Map<string, typeof presetVoices[0]>()
-    for (const item of uniqueVoices) {
-      if (!map.has(item.id)) map.set(item.id, item)
+    const list = zhVoices.length > 0 ? zhVoices : sysVoices
+    systemVoices.value = list.map((v) => ({
+      id: v.name,
+      name: `系统原生 · ${v.name} (${v.lang})`,
+      lang: v.lang,
+    }))
+  }
+}
+
+interface VoiceOption {
+  id: string
+  name: string
+  lang: string
+}
+
+const currentProviderVoices = computed<VoiceOption[]>(() => {
+  switch (settingsState.ttsProvider) {
+    case 'edge-tts':
+      return edgePresetVoices
+    case 'web-speech':
+      return systemVoices.value.length > 0
+        ? systemVoices.value
+        : [{ id: 'default', name: '系统默认声音', lang: 'zh-CN' }]
+    case 'cosyvoice':
+      return cosyPresetVoices
+    case 'siliconflow':
+      return siliconflowPresetVoices
+    default:
+      return []
+  }
+})
+
+function selectProvider(providerId: string) {
+  settingsState.ttsProvider = providerId as any
+  stopVoicePlayback()
+  const available = currentProviderVoices.value
+  if (available.length > 0) {
+    const exists = available.some((v) => v.id === settingsState.ttsVoice)
+    if (!exists) {
+      settingsState.ttsVoice = available[0].id
     }
-    availableVoices.value = Array.from(map.values())
   }
 }
 
@@ -122,7 +160,7 @@ async function testVoicePlayback() {
   stopVoicePlayback()
   isTestingVoice.value = true
 
-  const testText = '这是伴读语音试听效果：肠易激综合征是一种常见的脑-肠轴交互障碍。'
+  const testText = '您好，这是学术文献伴读语音试听效果。我将为您清晰、自然地朗读学术论文与中英讲稿。'
 
   // 1. 如果当前选定的是 Edge-TTS：真正调用云端 Edge-TTS 合成并播放真实 MP3 语音！
   if (settingsState.ttsProvider === 'edge-tts') {
@@ -364,7 +402,7 @@ function handleClearStorage() {
             <div
               v-for="provider in ttsProviders"
               :key="provider.id"
-              @click="settingsState.ttsProvider = provider.id"
+              @click="selectProvider(provider.id)"
               :class="[
                 'p-3 rounded-xl border cursor-pointer transition text-left flex flex-col justify-between gap-1.5',
                 settingsState.ttsProvider === provider.id
@@ -386,14 +424,13 @@ function handleClearStorage() {
           <div v-if="settingsState.ttsProvider !== 'none'" class="space-y-3 pt-2 bg-slate-50/60 dark:bg-slate-800/40 p-3.5 rounded-xl border border-slate-200/60 dark:border-slate-800">
             <div>
               <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
-                朗读音色选择 (实时试听联动)
+                朗读音色选择
               </label>
               <select
                 v-model="settingsState.ttsVoice"
-                @change="testVoicePlayback()"
                 class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
               >
-                <option v-for="v in availableVoices" :key="v.id" :value="v.id">{{ v.name }}</option>
+                <option v-for="v in currentProviderVoices" :key="v.id" :value="v.id">{{ v.name }}</option>
               </select>
             </div>
 
