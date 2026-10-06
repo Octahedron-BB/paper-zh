@@ -32,6 +32,7 @@ const expandedDoi = ref<Record<string, boolean>>({})
 const savedDocIds = ref<Set<string>>(new Set())
 const displayLang = ref<'zh' | 'en'>('zh')
 const digestingDoi = ref<Record<string, boolean>>({})
+const isBatchDigesting = ref(false)
 
 async function handleGenerateDigest(item: FeedItem) {
   const key = item.doi || item.doc_id
@@ -45,6 +46,24 @@ async function handleGenerateDigest(item: FeedItem) {
     alert(`AI 提要生成失败，请检查 API 配置: ${err.message}`)
   } finally {
     digestingDoi.value[key] = false
+  }
+}
+
+async function handleBatchDigest() {
+  if (!settingsState.apiKey) {
+    alert('请先在顶部右侧「设置」中配置 LLM API 密钥，即可批量生成所有文献的精准中文导读！')
+    return
+  }
+  isBatchDigesting.value = true
+  try {
+    for (const item of filteredItems.value) {
+      const key = item.doi || item.doc_id
+      if (!digestingDoi.value[key]) {
+        await handleGenerateDigest(item)
+      }
+    }
+  } finally {
+    isBatchDigesting.value = false
   }
 }
 
@@ -284,6 +303,17 @@ function handleActionForFeedItem(item: FeedItem) {
           </button>
         </div>
 
+        <!-- 批量 AI 提要按钮 -->
+        <button
+          @click="handleBatchDigest"
+          :disabled="isBatchDigesting || loading"
+          class="px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-xs font-medium flex items-center gap-1.5 transition"
+          title="使用 LLM 自动将本页全部文献摘要提炼为地道学术中文标题与机制速览"
+        >
+          <Sparkles :class="['w-3.5 h-3.5 text-indigo-500', isBatchDigesting ? 'animate-spin' : '']" />
+          <span>{{ isBatchDigesting ? '批量提炼中...' : '一键 AI 导读' }}</span>
+        </button>
+
         <button
           @click="handleRefreshPubMed(selectedDays)"
           :disabled="loading"
@@ -329,7 +359,7 @@ function handleActionForFeedItem(item: FeedItem) {
             <h3 class="text-base font-bold text-slate-900 dark:text-slate-100 leading-snug">
               {{ item.title_zh || item.title_en }}
             </h3>
-            <p v-if="item.title_zh && item.title_zh !== item.title_en" class="text-xs text-slate-500 font-serif mt-1">
+            <p v-if="item.title_en" class="text-xs text-slate-500 font-serif mt-1">
               {{ item.title_en }}
             </p>
           </template>
@@ -344,21 +374,31 @@ function handleActionForFeedItem(item: FeedItem) {
         </div>
 
         <!-- Brief / Abstract preview -->
-        <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800/60">
-          <span v-if="displayLang === 'zh'">{{ item.brief || item.abstract || item.detail }}</span>
-          <span v-else class="font-serif">{{ item.abstract || item.brief || item.detail }}</span>
-        </p>
+        <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800/60 space-y-2">
+          <div v-if="displayLang === 'zh'" class="space-y-1.5">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 shrink-0">核心要点</span>
+              <span class="font-medium text-slate-800 dark:text-slate-200">{{ item.brief }}</span>
+            </div>
+            <p v-if="item.detail && item.detail !== item.abstract" class="text-slate-600 dark:text-slate-400 pl-2.5 border-l-2 border-blue-500/80 leading-relaxed">
+              {{ item.detail }}
+            </p>
+          </div>
+          <div v-else class="font-serif leading-relaxed text-slate-600 dark:text-slate-400">
+            {{ item.abstract || item.brief }}
+          </div>
+        </div>
 
-        <!-- Detail Accordion -->
+        <!-- Detail Accordion (Full Abstract) -->
         <div v-if="expandedDoi[item.doi || item.doc_id]" class="text-xs text-slate-600 dark:text-slate-400 space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800 animate-fade-in">
-          <div v-if="item.detail && item.detail !== item.brief" class="space-y-1">
-            <div class="font-medium text-slate-700 dark:text-slate-300">📌 机制要点详析:</div>
+          <div v-if="item.detail && item.detail !== item.brief && item.detail !== item.abstract" class="space-y-1">
+            <div class="font-medium text-slate-700 dark:text-slate-300">📌 详细机制评述:</div>
             <p class="leading-relaxed bg-blue-50/40 dark:bg-blue-950/20 p-2.5 rounded-lg border-l-2 border-blue-500">
               {{ item.detail }}
             </p>
           </div>
           <div v-if="item.abstract" class="pt-1">
-            <div class="text-[11px] font-semibold text-slate-400">PUBMED ABSTRACT:</div>
+            <div class="text-[11px] font-semibold text-slate-400">PUBMED ABSTRACT (原文摘要):</div>
             <p class="text-[11px] text-slate-500 font-serif leading-relaxed mt-0.5 whitespace-pre-line">
               {{ item.abstract }}
             </p>
@@ -377,16 +417,15 @@ function handleActionForFeedItem(item: FeedItem) {
               <ChevronDown v-else class="w-3.5 h-3.5" />
             </button>
 
-            <!-- AI 提要按钮 (当尚未生成中文导读或需要重新提炼时) -->
+            <!-- AI 提要按钮 -->
             <button
-              v-if="!item.title_zh || item.title_zh === item.title_en"
               @click="handleGenerateDigest(item)"
               :disabled="digestingDoi[item.doi || item.doc_id]"
-              class="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 font-medium flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 transition"
-              title="根据英文摘要由 AI 提炼中文标题和机制导读"
+              class="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 font-medium flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition"
+              title="根据英文摘要由 AI 提炼精准学术中文标题与机制要点"
             >
               <Sparkles :class="['w-3 h-3', digestingDoi[item.doi || item.doc_id] ? 'animate-spin' : '']" />
-              <span>{{ digestingDoi[item.doi || item.doc_id] ? '提炼中...' : 'AI 生成导读' }}</span>
+              <span>{{ digestingDoi[item.doi || item.doc_id] ? '提炼中...' : (item.detail && item.detail !== item.abstract ? '重新AI提炼' : 'AI 提炼导读') }}</span>
             </button>
           </div>
 

@@ -78,18 +78,26 @@ export function generateReaderHtml(
     const enSource = sourceMap[sid] || ''
     const safeSidId = sid.replace(/[^a-zA-Z0-9_-]/g, '_')
 
-    // 切分句级 span，支持高亮与“点哪读哪”
-    let zhScriptHtml = ''
-    if (item.sentences && item.sentences.length > 0) {
-      zhScriptHtml = item.sentences.map((s: any, sIdx: number) =>
-        `<span class="sentence-span" data-seg="${i}" data-sen="${sIdx}" data-start="${s.start_sec}" data-end="${s.end_sec}" onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}, ${s.start_sec});">${s.text}</span>`
-      ).join('')
-    } else {
-      const sentenceList = splitSentences(zhScript)
-      zhScriptHtml = sentenceList.map((st: string, sIdx: number) =>
-        `<span class="sentence-span" data-seg="${i}" data-sen="${sIdx}" onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx});">${st}</span>`
-      ).join('')
-    }
+    // 切分句级 span，支持全部视图（中英对照/口语讲稿/译文）下的卡拉OK高亮与“点哪读哪”
+    const transSentences = splitSentences(zhTrans)
+    const scriptSentences = item.sentences && item.sentences.length > 0
+      ? item.sentences
+      : splitSentences(zhScript).map((st: string) => ({ text: st }))
+
+    const zhTransHtml = transSentences.map((st: string, sIdx: number) => {
+      const matchScript = scriptSentences[sIdx]
+      const sStart = matchScript?.start_sec !== undefined ? matchScript.start_sec : undefined
+      const startAttr = sStart !== undefined ? `data-start="${sStart}"` : ''
+      return `<span class="sentence-span trans-span" data-seg="${i}" data-sen="${sIdx}" ${startAttr} onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}${sStart !== undefined ? `, ${sStart}` : ''});">${st}</span>`
+    }).join('')
+
+    const zhScriptHtml = scriptSentences.map((s: any, sIdx: number) => {
+      const sText = typeof s === 'string' ? s : s.text
+      const sStart = s.start_sec !== undefined ? s.start_sec : undefined
+      const sEnd = s.end_sec !== undefined ? s.end_sec : undefined
+      const startAttr = sStart !== undefined ? `data-start="${sStart}" data-end="${sEnd}"` : ''
+      return `<span class="sentence-span script-span" data-seg="${i}" data-sen="${sIdx}" ${startAttr} onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}${sStart !== undefined ? `, ${sStart}` : ''});">${sText}</span>`
+    }).join('')
 
     contentBlocks.push(`
       <div class="segment-card" id="seg-${safeSidId}" data-seg-idx="${i}" onclick="jumpToSegment(${startSec}, ${i})">
@@ -97,7 +105,7 @@ export function generateReaderHtml(
           <span class="play-tag">▶ ${formatDurationStr(startSec)}</span>
           <span>${hasAudio ? `时长 ${(item.duration_sec || 0).toFixed(1)}s` : `第 ${i + 1} 段`}</span>
         </div>
-        <div class="text-zh-trans"><span class="badge-tag">译文</span>${zhTrans}</div>
+        <div class="text-zh-trans"><span class="badge-tag">译文</span>${zhTransHtml}</div>
         <div class="text-zh-script"><span class="badge-tag">讲稿</span>${zhScriptHtml}</div>
         <div class="text-en-source"><span class="badge-tag">原文</span>${enSource}</div>
       </div>
@@ -669,30 +677,86 @@ export function generateReaderHtml(
     let cachedVoices = [];
 
     function loadVoices() {
-      if (speechSynth) {
-        cachedVoices = speechSynth.getVoices();
+      let voices = [];
+      try {
+        if (speechSynth) voices = speechSynth.getVoices() || [];
+      } catch (e) {}
+      if ((!voices || voices.length === 0) && window.parent && window.parent.speechSynthesis) {
+        try {
+          voices = window.parent.speechSynthesis.getVoices() || [];
+        } catch (e) {}
+      }
+      if (voices && voices.length > 0) {
+        cachedVoices = voices;
       }
     }
     loadVoices();
     if (speechSynth && speechSynth.onvoiceschanged !== undefined) {
       speechSynth.onvoiceschanged = loadVoices;
     }
+    setTimeout(loadVoices, 250);
+    setTimeout(loadVoices, 800);
 
     function getMatchedVoice() {
       if (!cachedVoices || cachedVoices.length === 0) {
         loadVoices();
       }
-      // 1. 尝试精确匹配名称
-      let found = cachedVoices.find(v => v.name.includes(TARGET_VOICE_NAME) || TARGET_VOICE_NAME.includes(v.name));
-      // 2. 尝试按语言匹配 (zh-TW 或 zh-CN)
-      if (!found) {
-        const langPref = TARGET_VOICE_NAME.includes('TW') ? 'zh-TW' : 'zh';
-        found = cachedVoices.find(v => v.lang.replace('_', '-').toLowerCase().startsWith(langPref.toLowerCase()));
+      if (!cachedVoices || cachedVoices.length === 0) return null;
+
+      // 1. 完全精确匹配名称或 URI
+      let found = cachedVoices.find(v => v.name === TARGET_VOICE_NAME || v.voiceURI === TARGET_VOICE_NAME);
+      if (found) return found;
+
+      // 2. 模糊包含名称匹配
+      found = cachedVoices.find(v => v.name.includes(TARGET_VOICE_NAME) || TARGET_VOICE_NAME.includes(v.name));
+      if (found) return found;
+
+      // 3. 台湾音色 (zh-TW, 晓臻, Mei-Jia, Hanhan, 國語, Taiwan)
+      if (TARGET_VOICE_NAME.includes('TW') || TARGET_VOICE_NAME.includes('HsiaoChen') || TARGET_VOICE_NAME.includes('台湾')) {
+        found = cachedVoices.find(v => {
+          const n = v.name.toLowerCase();
+          const l = v.lang.replace('_', '-').toLowerCase();
+          return l.includes('zh-tw') || l.includes('zh-hk') || n.includes('mei-jia') || n.includes('hanhan') || n.includes('國語') || n.includes('taiwan');
+        });
+        if (found) return found;
       }
-      // 3. 任何中文
-      if (!found) {
-        found = cachedVoices.find(v => v.lang.toLowerCase().includes('zh') || v.lang.toLowerCase().includes('cmn'));
+
+      // 4. 男声音色 (Yunxi, Yunjian, 男声, Kangkang, Danny)
+      if (TARGET_VOICE_NAME.includes('Yunxi') || TARGET_VOICE_NAME.includes('Yunjian') || TARGET_VOICE_NAME.includes('男')) {
+        found = cachedVoices.find(v => {
+          const n = v.name.toLowerCase();
+          const l = v.lang.toLowerCase();
+          return l.includes('zh') && (n.includes('kangkang') || n.includes('danny') || n.includes('male') || n.includes('男'));
+        });
+        if (found) return found;
       }
+
+      // 5. 粤语音色 (HiuGaai, zh-HK, 晓佳, Sin-Ji)
+      if (TARGET_VOICE_NAME.includes('HK') || TARGET_VOICE_NAME.includes('HiuGaai') || TARGET_VOICE_NAME.includes('粤')) {
+        found = cachedVoices.find(v => {
+          const n = v.name.toLowerCase();
+          const l = v.lang.replace('_', '-').toLowerCase();
+          return l.includes('zh-hk') || n.includes('sin-ji') || n.includes('粵語') || n.includes('cantonese');
+        });
+        if (found) return found;
+      }
+
+      // 6. 普通话女声 (Xiaoxiao, 晓晓, Ting-Ting, Huihui, Yaoyao, Google 普通话)
+      if (TARGET_VOICE_NAME.includes('Xiaoxiao') || TARGET_VOICE_NAME.includes('CN') || TARGET_VOICE_NAME.includes('女')) {
+        found = cachedVoices.find(v => {
+          const n = v.name.toLowerCase();
+          const l = v.lang.replace('_', '-').toLowerCase();
+          return l.startsWith('zh-cn') && (n.includes('ting-ting') || n.includes('huihui') || n.includes('yaoyao') || n.includes('普通话') || n.includes('xiaoxiao'));
+        });
+        if (found) return found;
+      }
+
+      // 7. 任何 zh-CN 语言
+      found = cachedVoices.find(v => v.lang.replace('_', '-').toLowerCase().startsWith('zh-cn'));
+      if (found) return found;
+
+      // 8. 任何包含中文标识的 voice
+      found = cachedVoices.find(v => v.lang.toLowerCase().includes('zh') || v.lang.toLowerCase().includes('cmn'));
       return found || null;
     }
 
@@ -736,12 +800,16 @@ export function generateReaderHtml(
       highlightCard(segIdx);
       currentSentenceIndex = senIdx;
       document.querySelectorAll('.sentence-span').forEach(s => s.classList.remove('active-sentence'));
-      const targetSpan = document.querySelector('.sentence-span[data-seg="' + segIdx + '"][data-sen="' + senIdx + '"]');
-      if (targetSpan) {
-        targetSpan.classList.add('active-sentence');
-        if (autoScrollToggle && autoScrollToggle.checked) {
-          targetSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const targetSpans = document.querySelectorAll('.sentence-span[data-seg="' + segIdx + '"][data-sen="' + senIdx + '"]');
+      let firstVisibleSpan = null;
+      targetSpans.forEach(s => {
+        s.classList.add('active-sentence');
+        if (!firstVisibleSpan && s.offsetParent !== null) {
+          firstVisibleSpan = s;
         }
+      });
+      if (firstVisibleSpan && autoScrollToggle && autoScrollToggle.checked) {
+        firstVisibleSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
 
@@ -759,7 +827,14 @@ export function generateReaderHtml(
       const seg = TIMELINE[segIdx];
       const safeId = (seg.sid || '').replace(/[^a-zA-Z0-9_-]/g, '_');
       const card = document.getElementById('seg-' + safeId);
-      const spans = card ? Array.from(card.querySelectorAll('.sentence-span')) : [];
+
+      // 根据当前活跃模式选取对应的句级 spans (口语讲稿 vs 忠实译文)
+      const isScriptMode = document.body.classList.contains('view-script');
+      const selector = isScriptMode ? '.script-span' : '.trans-span';
+      let spans = card ? Array.from(card.querySelectorAll(selector)) : [];
+      if (spans.length === 0 && card) {
+        spans = Array.from(card.querySelectorAll('.sentence-span'));
+      }
 
       if (senIdx >= spans.length) {
         // 进入下一段
@@ -770,6 +845,10 @@ export function generateReaderHtml(
       highlightSentence(segIdx, senIdx);
       const span = spans[senIdx];
       const textToSpeak = span ? span.innerText.trim() : (seg.script || seg.src_text || '');
+      if (!textToSpeak) {
+        speakFromSentence(segIdx, senIdx + 1);
+        return;
+      }
 
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
       const matched = getMatchedVoice();
@@ -795,13 +874,16 @@ export function generateReaderHtml(
       };
 
       utterance.onerror = (e) => {
-        if (e.error !== 'canceled' && e.error !== 'interrupted') {
+        if (e.error === 'canceled' || e.error === 'interrupted') {
+          isWebSpeechPlaying = false;
+        } else {
           console.warn('Speech error:', e);
         }
         isWebSpeechPlaying = false;
         updatePlayIcon(false);
       };
 
+      isWebSpeechPlaying = true;
       speechSynth.speak(utterance);
     }
 
@@ -950,16 +1032,22 @@ export function generateReaderHtml(
     });
 
     // 页面卸载或关闭事件：彻底停止朗读
-    window.addEventListener('beforeunload', () => {
+    function haltAllPlayback() {
+      isWebSpeechPlaying = false;
       if (speechSynth) speechSynth.cancel();
-      if (audio) audio.pause();
-    });
+      if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+      }
+      updatePlayIcon(false);
+    }
+
+    window.addEventListener('beforeunload', haltAllPlayback);
+    window.addEventListener('unload', haltAllPlayback);
 
     window.addEventListener('message', (e) => {
       if (e.data === 'STOP_AUDIO') {
-        if (speechSynth) speechSynth.cancel();
-        if (audio) audio.pause();
-        updatePlayIcon(false);
+        haltAllPlayback();
       }
     });
 

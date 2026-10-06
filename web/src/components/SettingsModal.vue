@@ -79,22 +79,33 @@ const presetVoices = [
 
 const availableVoices = ref(presetVoices)
 
-onMounted(() => {
-  if ('speechSynthesis' in window) {
-    const sysVoices = window.speechSynthesis.getVoices()
-    if (sysVoices.length > 0) {
-      const zhVoices = sysVoices.filter((v) => v.lang.toLowerCase().includes('zh'))
-      if (zhVoices.length > 0) {
-        availableVoices.value = [
-          ...presetVoices,
-          ...zhVoices.map((v) => ({
-            id: v.name,
-            name: `系统 · ${v.name} (${v.lang})`,
-            lang: v.lang,
-          })),
-        ]
-      }
+function populateVoices() {
+  if (!('speechSynthesis' in window)) return
+  const sysVoices = window.speechSynthesis.getVoices()
+  if (sysVoices.length > 0) {
+    const zhVoices = sysVoices.filter((v) => v.lang.toLowerCase().includes('zh') || v.lang.toLowerCase().includes('cmn'))
+    const uniqueVoices = [
+      ...presetVoices,
+      ...zhVoices.map((v) => ({
+        id: v.name,
+        name: `系统原生 · ${v.name} (${v.lang})`,
+        lang: v.lang,
+      })),
+    ]
+    const map = new Map<string, typeof presetVoices[0]>()
+    for (const item of uniqueVoices) {
+      if (!map.has(item.id)) map.set(item.id, item)
     }
+    availableVoices.value = Array.from(map.values())
+  }
+}
+
+onMounted(() => {
+  populateVoices()
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = populateVoices
+    setTimeout(populateVoices, 250)
+    setTimeout(populateVoices, 800)
   }
 })
 
@@ -118,17 +129,55 @@ function testVoicePlayback() {
   const u = new SpeechSynthesisUtterance(testText)
 
   const sysVoices = window.speechSynthesis.getVoices()
-  const matched = sysVoices.find(
-    (v) =>
-      v.name.includes(settingsState.ttsVoice) ||
-      (settingsState.ttsVoice.includes('TW') && v.lang.includes('TW')) ||
-      v.lang.toLowerCase().startsWith('zh')
-  )
+  const target = settingsState.ttsVoice
+
+  let matched: SpeechSynthesisVoice | undefined = undefined
+  // 1. 完全精确匹配
+  matched = sysVoices.find((v) => v.name === target || v.voiceURI === target)
+  // 2. 包含匹配
+  if (!matched) matched = sysVoices.find((v) => v.name.includes(target) || target.includes(v.name))
+  // 3. 台湾音色
+  if (!matched && (target.includes('TW') || target.includes('HsiaoChen') || target.includes('台湾'))) {
+    matched = sysVoices.find((v) => {
+      const n = v.name.toLowerCase()
+      const l = v.lang.replace('_', '-').toLowerCase()
+      return l.includes('zh-tw') || l.includes('zh-hk') || n.includes('mei-jia') || n.includes('hanhan') || n.includes('國語')
+    })
+  }
+  // 4. 男声音色
+  if (!matched && (target.includes('Yunxi') || target.includes('Yunjian') || target.includes('男'))) {
+    matched = sysVoices.find((v) => {
+      const n = v.name.toLowerCase()
+      const l = v.lang.toLowerCase()
+      return l.includes('zh') && (n.includes('kangkang') || n.includes('danny') || n.includes('male') || n.includes('男'))
+    })
+  }
+  // 5. 粤语
+  if (!matched && (target.includes('HK') || target.includes('HiuGaai') || target.includes('粤'))) {
+    matched = sysVoices.find((v) => {
+      const n = v.name.toLowerCase()
+      const l = v.lang.replace('_', '-').toLowerCase()
+      return l.includes('zh-hk') || n.includes('sin-ji') || n.includes('粵語') || n.includes('cantonese')
+    })
+  }
+  // 6. 普通话女声
+  if (!matched && (target.includes('Xiaoxiao') || target.includes('CN') || target.includes('女'))) {
+    matched = sysVoices.find((v) => {
+      const n = v.name.toLowerCase()
+      const l = v.lang.replace('_', '-').toLowerCase()
+      return l.startsWith('zh-cn') && (n.includes('ting-ting') || n.includes('huihui') || n.includes('yaoyao') || n.includes('普通话'))
+    })
+  }
+  // 7. 任何中文
+  if (!matched) {
+    matched = sysVoices.find((v) => v.lang.toLowerCase().includes('zh') || v.lang.toLowerCase().includes('cmn'))
+  }
+
   if (matched) {
     u.voice = matched
     u.lang = matched.lang
   } else {
-    u.lang = settingsState.ttsVoice.includes('TW') ? 'zh-TW' : 'zh-CN'
+    u.lang = target.includes('TW') ? 'zh-TW' : 'zh-CN'
   }
 
   const rateNum = 1.0 + parseFloat(settingsState.ttsRate.replace('%', '')) / 100.0

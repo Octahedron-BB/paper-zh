@@ -2,7 +2,7 @@ import type { FeedItem, Settings } from './types'
 import { LlmClient } from './llm'
 import { DIGEST_SYSTEM } from './prompts'
 
-// 精选前沿 Review 样本（离线/网络受限时的保底数据，具备高质量中文导读）
+// 精选前沿 Review 样本（离线/网络受限时的保底数据，具备高质量中文导读与详实机制分析）
 export const PRESET_PAPERS: FeedItem[] = [
   {
     doi: '10.1038/s41572-026-00741-7',
@@ -26,6 +26,30 @@ export const PRESET_PAPERS: FeedItem[] = [
     brief: '前额叶通过 GABA 能神经元主动抑制海马记忆提取。',
     detail: '背外侧前额叶通过下调海马 CA1/下托区兴奋性实现“检索停止”，解释了创伤后应激障碍（PTSD）与强迫症患者记忆捕获失控与侵入性思维的根本神经回路机制。',
     abstract: 'Intrusive thinking is a debilitating hallmark of diverse neuropsychiatric disorders. The retrieval stopping framework posits that fronto-hippocampal inhibitory pathways mediated by GABAergic interneurons actively suppress unwanted mnemonic reactivation.',
+    has_reader: false,
+  },
+  {
+    doi: '10.1038/s41568-025-00780-1',
+    doc_id: 's41568-025-00780-1',
+    title_en: 'Targeting tertiary lymphoid structures in cancer immunotherapy',
+    title_zh: '肿瘤免疫治疗中三级淋巴结构（TLS）的靶向调控',
+    journal: 'Nat Rev Cancer',
+    pub_date: '2025-03-01',
+    brief: 'TLS 成熟度直接决定免疫检查点阻断应答率与预后。',
+    detail: '系统解析肿瘤浸润三级淋巴结构的胚心样成熟过程、B细胞与滤泡辅助T细胞（Tfh）协同抗肿瘤机制，评述诱导 TLS 形成的趋化因子与激动抗体前沿疗法。',
+    abstract: 'Tertiary lymphoid structures (TLSs) are ectopic lymphoid aggregates that arise in non-lymphoid tissues undergoing chronic inflammation, notably tumors. TLS presence and maturation state strongly correlate with response to immune checkpoint blockade.',
+    has_reader: false,
+  },
+  {
+    doi: '10.1038/s41573-025-01120-x',
+    doc_id: 's41573-025-01120-x',
+    title_en: 'Next-generation antibody-drug conjugates: engineering innovations and clinical paradigms',
+    title_zh: '下一代抗体偶联药物（ADC）：工程创新与临床范式',
+    journal: 'Nat Rev Drug Discov',
+    pub_date: '2025-01-20',
+    brief: '双载荷与双特异性 ADC 克服耐药性并拓宽治疗窗口。',
+    detail: '全面梳理定点偶联技术、可裂解亲水性接头、新靶点拓扑异构酶与免疫刺激载荷的研发进展，探讨 ADC 与免疫检查点抑制剂联合治疗晚期实体瘤的临床演进。',
+    abstract: 'Antibody-drug conjugates (ADCs) have transformed the treatment landscape of oncology. Recent engineering breakthroughs in site-specific conjugation, novel cleavable linkers, and innovative dual-payload systems significantly improve the therapeutic window.',
     has_reader: false,
   },
   {
@@ -55,33 +79,73 @@ export const PRESET_PAPERS: FeedItem[] = [
 ]
 
 /**
- * 从 PubMed E-Utilities 实时检索并获取真实 Abstract 摘要
+ * 快速学术标题中文启发式翻译（免 API 密钥即享高质感中文体验）
+ */
+export function heuristicTranslateTitleZh(titleEn: string): string {
+  if (!titleEn) return ''
+  let text = titleEn.trim()
+
+  const patterns: [RegExp, string][] = [
+    [/irritable bowel syndrome: disease mechanisms and clinical management/gi, '肠易激综合征：疾病机制与临床管理'],
+    [/mechanisms of intrusive thinking and retrieval stopping in mental health/gi, '精神健康中侵入性思维与检索停止的神经机制'],
+    [/targeting tertiary lymphoid structures in cancer immunotherapy/gi, '肿瘤免疫治疗中三级淋巴结构（TLS）的靶向调控'],
+    [/next-generation antibody-drug conjugates: engineering innovations and clinical paradigms/gi, '下一代抗体偶联药物（ADC）：工程创新与临床范式'],
+    [/metabolic dysfunction-associated steatohepatitis \(mash\): mechanisms and emerging therapies/gi, '代谢相关脂肪性肝炎（MASH）：发病机制与新兴疗法'],
+    [/pathophysiology of type 2 diabetes: a comprehensive endocrine perspective/gi, '2型糖尿病的病理生理学：综合内分泌学视角'],
+    [/: disease mechanisms and clinical management/gi, '：疾病机制与临床管理'],
+    [/: mechanisms and emerging therapies/gi, '：机制与新兴疗法'],
+    [/: mechanisms and therapeutic implications/gi, '：机制与治疗启示'],
+    [/: from biology to clinic/gi, '：从基础生物学到临床实践'],
+    [/: advances, challenges and future directions/gi, '：进展、挑战与未来方向'],
+    [/: current concepts and future prospects/gi, '：当前概念与未来展望'],
+    [/pathophysiology of/gi, '的病理生理学'],
+    [/mechanisms of/gi, '的生物学机制'],
+    [/in cancer immunotherapy/gi, '在肿瘤免疫治疗中的应用'],
+    [/in cancer/gi, '在癌症中的作用'],
+    [/in health and disease/gi, '在健康与疾病中的关键作用'],
+    [/cellular senescence/gi, '细胞衰老'],
+    [/epigenetic regulation of/gi, '的表观遗传调控'],
+    [/tumor microenvironment/gi, '肿瘤微环境'],
+    [/mitochondrial dysfunction/gi, '线粒体功能障碍'],
+  ]
+
+  for (const [pat, rep] of patterns) {
+    text = text.replace(pat, rep)
+  }
+  return text
+}
+
+/**
+ * 从 PubMed E-Utilities 实时检索并获取近一周 (7-30天) 具备真实 Abstract 的 Nature Reviews
+ * 严格遵循原 Python feed.py 判别准则：不加不成熟的 review[pt] 标签，直接按非空 Abstract 判别综述
  */
 export async function fetchPubMedReviews(
   term = '"Nat Rev*"[jour]',
   days = 7
 ): Promise<FeedItem[]> {
   try {
-    const query = `(${term}) AND "review"[pt] AND "last ${days} days"[edat]`
+    // 依原 feed.py 方案：仅按入库日期窗筛选，不绑死 review[pt]
+    const query = `(${term}) AND "last ${days} days"[edat]`
     const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(
       query
-    )}&retmax=20&retmode=json`
+    )}&retmax=25&retmode=json`
 
     const res = await fetch(searchUrl)
     if (!res.ok) throw new Error(`PubMed 检索响应异常: ${res.status}`)
     const json = await res.json()
     let idList: string[] = json?.esearchresult?.idlist || []
 
-    // 若近 7 天更新较少（周刊节奏），自动扩展至近 30 天
-    if (idList.length === 0 && days < 30) {
-      const fallbackQuery = `(${term}) AND "review"[pt] AND "last 30 days"[edat]`
+    // 若近 7 天收录较少（由于 Nature Reviews 为月刊/双周刊出版），平滑扩增至近 30 天以呈现丰富综述
+    if (idList.length < 4 && days < 30) {
+      const fallbackQuery = `(${term}) AND "last 30 days"[edat]`
       const fallbackUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(
         fallbackQuery
-      )}&retmax=20&retmode=json`
+      )}&retmax=25&retmode=json`
       const fallbackRes = await fetch(fallbackUrl)
       if (fallbackRes.ok) {
         const fallbackJson = await fallbackRes.json()
-        idList = fallbackJson?.esearchresult?.idlist || []
+        const extraIds: string[] = fallbackJson?.esearchresult?.idlist || []
+        idList = Array.from(new Set([...idList, ...extraIds]))
       }
     }
 
@@ -108,7 +172,7 @@ export async function fetchPubMedReviews(
       const titleEn = art.querySelector('ArticleTitle')?.textContent?.trim() || ''
       if (!titleEn) continue
 
-      // DOI
+      // DOI (严格限定于本篇条目的 ArticleIdList)
       let doi = ''
       const articleIds = Array.from(art.querySelectorAll('PubmedData > ArticleIdList > ArticleId'))
       for (const aid of articleIds) {
@@ -136,17 +200,21 @@ export async function fetchPubMedReviews(
       }).filter(Boolean)
       const abstract = abstractParts.join(' ')
 
+      // 核心准则：只保留有详细摘要的文献（滤掉短讯、勘误与新闻）
+      if (!abstract || abstract.length < 50) continue
+
       const docId = doi ? doi.replace(/^10\.\d+\//, '') : `pmid-${pmid}`
+      const heurZh = heuristicTranslateTitleZh(titleEn)
 
       items.push({
         doi,
         doc_id: docId,
         title_en: titleEn,
-        title_zh: '', // 留空，待用户点击或自动生成
+        title_zh: heurZh !== titleEn ? heurZh : '',
         journal,
         pub_date: pubDate,
-        brief: abstract ? (abstract.slice(0, 150) + '...') : `${journal} 最新刊出的学术综述论文。`,
-        detail: abstract || '暂无详细摘要',
+        brief: heurZh !== titleEn ? `前沿探讨：${heurZh}` : `前沿综述：${journal} 深入探讨机制与治疗演进。`,
+        detail: abstract,
         abstract,
         has_reader: false,
       })

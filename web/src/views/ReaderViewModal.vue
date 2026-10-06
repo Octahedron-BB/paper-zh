@@ -17,9 +17,12 @@ const blobUrl = ref('')
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 
 function stopAllPlayback() {
-  // 1. 取消父窗口可能存在的任何朗读
+  // 1. 取消顶层与父窗口可能存在的任何朗读
   if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel()
+    try { window.speechSynthesis.cancel() } catch {}
+  }
+  if (window.parent && 'speechSynthesis' in window.parent) {
+    try { window.parent.speechSynthesis.cancel() } catch {}
   }
 
   // 2. 向 iframe 内发送停止音频消息并强制暂停
@@ -38,10 +41,22 @@ function stopAllPlayback() {
       // 跨域保护，忽略
     }
   }
+
+  // 3. 延时二次取消，清除浏览器底层引擎可能滞留的队列
+  setTimeout(() => {
+    if ('speechSynthesis' in window) {
+      try { window.speechSynthesis.cancel() } catch {}
+    }
+  }, 50)
 }
 
 function handleClose() {
   stopAllPlayback()
+  if (iframeRef.value) {
+    try {
+      iframeRef.value.src = 'about:blank'
+    } catch {}
+  }
   if (blobUrl.value) {
     URL.revokeObjectURL(blobUrl.value)
     blobUrl.value = ''
