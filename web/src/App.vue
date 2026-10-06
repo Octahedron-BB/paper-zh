@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import type { Document } from './core/types'
+import { segmentHtml } from './core/segmentHtml'
 import FeedView from './views/FeedView.vue'
 import LibraryView from './views/LibraryView.vue'
 import SettingsModal from './components/SettingsModal.vue'
@@ -38,6 +39,32 @@ async function handleOpenSavedReader(docId: string) {
     handleOpenReader(paper.html, paper.title, paper.doc_id)
   }
 }
+
+onMounted(() => {
+  // 1. 书签小工具传递检查
+  const urlParams = new URLSearchParams(window.location.search)
+  const importId = urlParams.get('import_doc')
+  if (importId) {
+    const rawHtml =
+      localStorage.getItem('paper_transfer_' + importId) ||
+      sessionStorage.getItem('paper_transfer_' + importId)
+    if (rawHtml) {
+      localStorage.removeItem('paper_transfer_' + importId)
+      sessionStorage.removeItem('paper_transfer_' + importId)
+      const doc = segmentHtml(rawHtml, importId)
+      handleSelectDocument(doc)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }
+
+  // 2. postMessage 监听 (支持从外部窗口/油猴脚本一键推送全文)
+  window.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'PAPER_ZH_IMPORT' && event.data.html) {
+      const doc = segmentHtml(event.data.html, event.data.docId || 'doc_' + Date.now())
+      handleSelectDocument(doc)
+    }
+  })
+})
 </script>
 
 <template>
