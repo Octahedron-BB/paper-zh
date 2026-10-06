@@ -57,11 +57,20 @@ onMounted(() => {
     }
   }
 
-  // 2. postMessage 监听 (支持从外部窗口/油猴脚本一键推送全文)
+  // 2. postMessage 监听 (支持从外部窗口/油猴脚本/书签小工具一键推送全文)
   window.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'PAPER_ZH_IMPORT' && event.data.html) {
-      const doc = segmentHtml(event.data.html, event.data.docId || 'doc_' + Date.now())
+      const docId = event.data.docId || 'doc_' + Date.now()
+      const doc = segmentHtml(event.data.html, docId)
+      if (event.data.title && (doc.title === 'Academic Paper' || !doc.title)) {
+        doc.title = event.data.title
+      }
       handleSelectDocument(doc)
+      try {
+        ;(event.source as any)?.postMessage({ type: 'PAPER_ZH_IMPORT_ACK' }, '*')
+      } catch (e) {
+        // ignore
+      }
     }
   })
 })

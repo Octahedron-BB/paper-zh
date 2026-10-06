@@ -18,7 +18,9 @@ import {
   ExternalLink,
   BookOpen,
   Languages,
+  FileUp,
 } from 'lucide-vue-next'
+import ImportModal from '../components/ImportModal.vue'
 
 const emit = defineEmits<{
   (e: 'select-document', doc: Document): void
@@ -201,55 +203,19 @@ async function processFile(file: File) {
   }
 }
 
-// 针对精选文献点击“制作伴读”
+const selectedItemForImport = ref<FeedItem | null>(null)
+const isImportModalOpen = ref(false)
+
+// 针对精选文献点击操作
 function handleActionForFeedItem(item: FeedItem) {
   if (savedDocIds.value.has(item.doc_id)) {
     emit('open-saved-reader', item.doc_id)
     return
   }
 
-  // 虚拟构建一个基础文献结构（若无本地全文，以摘要为示范）
-  const abstractText = item.abstract || item.detail || item.brief
-  const doc: Document = {
-    doc_id: item.doc_id,
-    title: item.title_en,
-    sections: [
-      {
-        heading: 'Abstract & Overview',
-        level: 2,
-        slug: 'sec-0',
-        sec_path: 'sec-0',
-        segments: [
-          {
-            sid: 'sec-0#p0',
-            doc_id: item.doc_id,
-            sec_path: 'sec-0',
-            sec_heading: 'Abstract & Overview',
-            sec_level: 2,
-            index: 0,
-            page: 1,
-            src_text: abstractText,
-            n_words: abstractText.split(/\s+/).length,
-          },
-        ],
-      },
-    ],
-    segments: [
-      {
-        sid: 'sec-0#p0',
-        doc_id: item.doc_id,
-        sec_path: 'sec-0',
-        sec_heading: 'Abstract & Overview',
-        sec_level: 2,
-        index: 0,
-        page: 1,
-        src_text: abstractText,
-        n_words: abstractText.split(/\s+/).length,
-      },
-    ],
-  }
-
-  emit('select-document', doc)
+  // 打开导入全文制作弹窗
+  selectedItemForImport.value = item
+  isImportModalOpen.value = true
 }
 </script>
 
@@ -510,12 +476,20 @@ function handleActionForFeedItem(item: FeedItem) {
               @click="handleActionForFeedItem(item)"
               class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm shadow-blue-500/20 transition"
             >
-              <Sparkles class="w-3.5 h-3.5" />
-              <span>制作伴读</span>
+              <FileUp class="w-3.5 h-3.5" />
+              <span>导入全文制作</span>
             </button>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- 导入全文制作弹窗 -->
+    <ImportModal
+      :is-open="isImportModalOpen"
+      :item="selectedItemForImport"
+      @close="isImportModalOpen = false"
+      @select-document="(doc) => emit('select-document', doc)"
+    />
   </div>
 </template>
