@@ -46,16 +46,22 @@ export interface Term {
   status?: 'suggested' | 'approved' | 'rejected'
 }
 
+export type TtsProvider = 'edge-tts' | 'web-speech' | 'openai' | 'cosyvoice' | 'siliconflow' | 'none'
+
 export interface Settings {
   llmProvider: 'deepseek' | 'openai' | 'gemini' | 'custom'
   apiKey: string
   model: string
   customBaseUrl?: string
   enableTts: boolean
+  ttsProvider: TtsProvider
   ttsVoice: string
   ttsRate: string
   academicProxyUrl?: string
   academicProxyCookie?: string
+  // 预留其他 TTS 供应商配置
+  customTtsApiKey?: string
+  customTtsModel?: string
 }
 
 export interface FeedItem {

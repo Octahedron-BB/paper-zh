@@ -9,10 +9,13 @@ const defaultSettings: Settings = {
   model: 'deepseek-chat',
   customBaseUrl: '',
   enableTts: true,
+  ttsProvider: 'edge-tts',
   ttsVoice: 'zh-TW-HsiaoChenNeural',
   ttsRate: '+0%',
   academicProxyUrl: '',
   academicProxyCookie: '',
+  customTtsApiKey: '',
+  customTtsModel: '',
 }
 
 function loadSettings(): Settings {

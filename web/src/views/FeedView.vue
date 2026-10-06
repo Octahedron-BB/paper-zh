@@ -34,10 +34,18 @@ async function refreshSavedStatus() {
   savedDocIds.value = new Set(saved.map((p) => p.doc_id))
 }
 
-onMounted(async () => {
-  items.value = PRESET_PAPERS
-  await refreshSavedStatus()
-})
+const selectedDays = ref(7)
+
+async function handleRefreshPubMed(days = selectedDays.value) {
+  loading.value = true
+  selectedDays.value = days
+  try {
+    const list = await fetchPubMedReviews('"Nat Rev*"[jour]', days)
+    items.value = list
+  } finally {
+    loading.value = false
+  }
+}
 
 const filteredItems = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
@@ -52,15 +60,12 @@ const filteredItems = computed(() => {
   )
 })
 
-async function handleRefreshPubMed() {
-  loading.value = true
-  try {
-    const list = await fetchPubMedReviews('"Nat Rev*"[jour]', 60)
-    items.value = list
-  } finally {
-    loading.value = false
-  }
-}
+onMounted(async () => {
+  items.value = PRESET_PAPERS
+  await refreshSavedStatus()
+  // 自动拉取近 7 天的最新 Nature Reviews
+  handleRefreshPubMed(7)
+})
 
 function toggleExpand(doi: string) {
   expandedDoi.value[doi] = !expandedDoi.value[doi]
@@ -216,13 +221,30 @@ function handleActionForFeedItem(item: FeedItem) {
       </div>
 
       <div class="flex items-center gap-2">
+        <!-- 时间窗口切换 -->
+        <div class="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px]">
+          <button
+            v-for="d in [7, 14, 30]"
+            :key="d"
+            @click="handleRefreshPubMed(d)"
+            :class="[
+              'px-2.5 py-1 rounded-lg font-medium transition',
+              selectedDays === d
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            ]"
+          >
+            {{ d === 7 ? '近一周 (7天)' : `近 ${d} 天` }}
+          </button>
+        </div>
+
         <button
-          @click="handleRefreshPubMed"
+          @click="handleRefreshPubMed(selectedDays)"
           :disabled="loading"
           class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium flex items-center gap-1.5 transition"
         >
           <RefreshCw :class="['w-3.5 h-3.5', loading ? 'animate-spin text-blue-500' : '']" />
-          <span>PubMed 实时流刷新</span>
+          <span>刷新</span>
         </button>
       </div>
     </div>
@@ -239,6 +261,9 @@ function handleActionForFeedItem(item: FeedItem) {
           <div class="flex items-center gap-2">
             <span class="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-semibold text-[11px]">
               {{ item.journal }}
+            </span>
+            <span class="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold text-[11px]">
+              综述 (Review)
             </span>
             <span class="text-slate-400">{{ item.pub_date }}</span>
           </div>

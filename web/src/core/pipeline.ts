@@ -102,11 +102,12 @@ export async function runDocumentPipeline(
       }
     }
 
-    // 5. 语音合成 (Edge-TTS)
+    // 5. 语音合成 (TTS)
     const timeline: any[] = []
+    const audioBlobs: Blob[] = []
     let combinedAudioBase64 = ''
 
-    if (settings.enableTts) {
+    if (settings.enableTts && settings.ttsProvider === 'edge-tts') {
       emit('audio', 0, totalSegs, '正在调用 Edge-TTS 生成沉浸式全篇朗读与时间戳...')
       let cumulativeTimeSec = 0
 
@@ -146,12 +147,11 @@ export async function runDocumentPipeline(
             sentences,
           })
 
-          // 合并首段音频以供内嵌或使用完整合并
-          if (!combinedAudioBase64) {
-            combinedAudioBase64 = ttsRes.audioBase64
+          if (ttsRes.audioBlob && ttsRes.audioBlob.size > 0) {
+            audioBlobs.push(ttsRes.audioBlob)
           }
         } catch (err: any) {
-          emit('audio', i + 1, totalSegs, `段落 ${seg.sid} TTS 合成受限: ${err.message}，自动继续`)
+          emit('audio', i + 1, totalSegs, `段落 ${seg.sid} TTS 合成受限: ${err.message}，启用浏览器朗读后备`)
           const estDuration = Math.max(3, scriptText.length * 0.25)
           const startSec = cumulativeTimeSec
           const endSec = startSec + estDuration
@@ -168,8 +168,24 @@ export async function runDocumentPipeline(
           })
         }
       }
+
+      // 将所有分段 MP3 合并成单一连续音频
+      if (audioBlobs.length > 0) {
+        emit('audio', totalSegs, totalSegs, '正在拼接全篇音频数据流...')
+        const mergedBlob = new Blob(audioBlobs, { type: 'audio/mp3' })
+        combinedAudioBase64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onloadend = () => {
+            const res = reader.result as string
+            resolve(res.split(',')[1] || '')
+          }
+          reader.readAsDataURL(mergedBlob)
+        })
+      }
+    } else if (settings.ttsProvider === 'web-speech') {
+      emit('audio', totalSegs, totalSegs, '启用浏览器原生 Web Speech API 朗读引擎')
     } else {
-      emit('audio', totalSegs, totalSegs, '用户已设置跳过 TTS 语音生成，保留纯文稿三合一伴读')
+      emit('audio', totalSegs, totalSegs, '已跳过音频文件内嵌，启用浏览器原生朗读/纯文稿模式')
     }
 
     // 6. 打包单文件 HTML

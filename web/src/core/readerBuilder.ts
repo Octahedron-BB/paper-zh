@@ -21,8 +21,8 @@ export function generateReaderHtml(
   voice = 'zh-TW-HsiaoChenNeural'
 ): string {
   const hasAudio = !!audioBase64
-  const audioSrc = hasAudio ? `data:audio/mp3;base64,${audioBase64}` : ''
-  const totalSec = timeline.length > 0 ? (timeline[timeline.length - 1].end_sec || 0) : 0
+  const audioSrc = hasAudio ? `data:audio/mp3;base64,{AUDIO_DATA}` : ''
+  const totalSec = timeline.length > 0 ? (timeline[timeline.length - 1].end_sec || 0) : doc.segments.length * 6
 
   // 组织主体 HTML
   const contentBlocks: string[] = []
@@ -37,29 +37,30 @@ export function generateReaderHtml(
     }
   }
 
-  // 如果没有 timeline (跳过了 TTS)，我们用 doc.segments 构建一个基础的 timeline 项
+  // 如果没有 timeline，用 doc.segments 构建基础 timeline
   const effectiveTimeline = timeline.length > 0 ? timeline : doc.segments.map((seg, idx) => ({
     sid: seg.sid,
     sec_path: seg.sec_path,
     sec_heading: seg.sec_heading,
-    start_sec: idx * 5,
-    end_sec: (idx + 1) * 5,
-    duration_sec: 5,
-    script: scripts[seg.sid] || '',
+    start_sec: idx * 6,
+    end_sec: (idx + 1) * 6,
+    duration_sec: 6,
+    script: scripts[seg.sid] || translations[seg.sid] || seg.src_text,
     sentences: []
   }))
 
-  for (const item of effectiveTimeline) {
+  for (let i = 0; i < effectiveTimeline.length; i++) {
+    const item = effectiveTimeline[i]
     const sid = item.sid
     const secPath = item.sec_path || 'sec-0'
     const secHeading = item.sec_heading || '正文'
-    const startSec = item.start_sec || 0
+    const startSec = item.start_sec || (i * 6)
 
     if (!seenSections.has(secPath)) {
       seenSections.add(secPath)
       contentBlocks.push(`<h2 class="section-title" id="sec-${secPath}">📌 ${secHeading}</h2>`)
       tocBlocks.push(
-        `<div class="toc-item" id="toc-${secPath}" onclick="jumpToSegment(${startSec}); toggleSidebar();">` +
+        `<div class="toc-item" id="toc-${secPath}" onclick="jumpToSegment(${startSec}, ${i}); toggleSidebar();">` +
         `<span>${secHeading}</span>` +
         `<span style="color: var(--text-muted); font-size: 0.75rem;">${formatDurationStr(startSec)}</span>` +
         `</div>`
@@ -75,15 +76,15 @@ export function generateReaderHtml(
     let zhScriptHtml = zhScript
     if (item.sentences && item.sentences.length > 0) {
       zhScriptHtml = item.sentences.map((s: any) =>
-        `<span class="sentence-span" data-start="${s.start_sec}" data-end="${s.end_sec}" onclick="event.stopPropagation(); jumpToSegment(${s.start_sec});">${s.text}</span>`
+        `<span class="sentence-span" data-start="${s.start_sec}" data-end="${s.end_sec}" onclick="event.stopPropagation(); jumpToSegment(${s.start_sec}, ${i});">${s.text}</span>`
       ).join('')
     }
 
     contentBlocks.push(`
-      <div class="segment-card" id="seg-${safeSidId}" onclick="jumpToSegment(${startSec})">
+      <div class="segment-card" id="seg-${safeSidId}" data-seg-idx="${i}" onclick="jumpToSegment(${startSec}, ${i})">
         <div class="card-meta">
           <span class="play-tag">▶ ${formatDurationStr(startSec)}</span>
-          <span>${hasAudio ? `时长 ${(item.duration_sec || 0).toFixed(1)}s` : sid}</span>
+          <span>${hasAudio ? `时长 ${(item.duration_sec || 0).toFixed(1)}s` : `第 ${i + 1} 段`}</span>
         </div>
         <div class="text-zh-trans"><span class="badge-tag">译文</span>${zhTrans}</div>
         <div class="text-zh-script"><span class="badge-tag">讲稿</span>${zhScriptHtml}</div>
@@ -94,7 +95,7 @@ export function generateReaderHtml(
 
   const safeTitle = doc.title || doc.doc_id
 
-  return `<!DOCTYPE html>
+  let htmlTemplate = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -104,7 +105,7 @@ export function generateReaderHtml(
     :root {
       --bg: #f8fafc;
       --surface: #ffffff;
-      --surface-glass: rgba(255, 255, 255, 0.90);
+      --surface-glass: rgba(255, 255, 255, 0.92);
       --text: #0f172a;
       --text-muted: #64748b;
       --en-text: #64748b;
@@ -126,7 +127,7 @@ export function generateReaderHtml(
       :root {
         --bg: #090d16;
         --surface: #131c2e;
-        --surface-glass: rgba(19, 28, 46, 0.92);
+        --surface-glass: rgba(19, 28, 46, 0.94);
         --text: #f8fafc;
         --text-muted: #94a3b8;
         --en-text: #94a3b8;
@@ -149,7 +150,7 @@ export function generateReaderHtml(
       background: var(--bg);
       color: var(--text);
       line-height: 1.75;
-      padding-bottom: ${hasAudio ? '150px' : '60px'};
+      padding-bottom: 160px;
       -webkit-font-smoothing: antialiased;
     }
 
@@ -344,13 +345,13 @@ export function generateReaderHtml(
     .view-trans .text-zh-script { display: none; }
     .view-trans .text-en-source { display: none; }
 
-    /* Modern Floating Player Bar */
+    /* Modern Floating Player Bar: ALWAYS VISIBLE */
     .player-dock {
       position: fixed;
       bottom: calc(16px + env(safe-area-inset-bottom, 0px));
       left: 0;
       right: 0;
-      display: ${hasAudio ? 'flex' : 'none'};
+      display: flex;
       justify-content: center;
       z-index: 200;
       padding: 0 16px;
@@ -478,7 +479,7 @@ export function generateReaderHtml(
 
     /* Mobile Responsive */
     @media (max-width: 640px) {
-      body { padding-bottom: ${hasAudio ? '180px' : '60px'}; }
+      body { padding-bottom: 180px; }
       header { padding: 10px 14px; flex-direction: column; align-items: stretch; gap: 10px; }
       .btn-toc-desktop { display: none; }
       .btn-toc-mobile { display: inline-flex; }
@@ -565,8 +566,8 @@ export function generateReaderHtml(
       <h1 class="paper-title">${safeTitle}</h1>
       <div class="paper-meta">
         <span>📄 ID: ${doc.doc_id}</span>
-        ${hasAudio ? `<span>⏱️ 总时长: ${formatDuration(totalSec)}</span>` : ''}
-        ${hasAudio ? `<span>🎙️ 音色: ${voice}</span>` : ''}
+        <span>⏱️ 总时长: ${formatDuration(totalSec)}</span>
+        <span>🎙️ 模式: ${hasAudio ? `Edge-TTS (${voice})` : '浏览器原生朗读'}</span>
         <span>📊 共 ${doc.segments.length} 段</span>
       </div>
     </div>
@@ -593,6 +594,7 @@ export function generateReaderHtml(
               <option value="1.0" selected>1.0x</option>
               <option value="1.25">1.25x</option>
               <option value="1.5">1.5x</option>
+              <option value="1.75">1.75x</option>
               <option value="2.0">2.0x</option>
             </select>
           </div>
@@ -603,14 +605,14 @@ export function generateReaderHtml(
         </div>
 
         <div class="ctrl-group">
-          <button class="btn-circle" onclick="skipAudio(-15)" title="后退 15 秒">
+          <button class="btn-circle" onclick="skipAudio(-15)" title="后退 15 秒 / 上一段">
             <svg class="icon" viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05 1-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.2 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/><text x="9" y="16" font-size="7" font-weight="bold" fill="currentColor">15</text></svg>
           </button>
           <button class="btn-circle btn-play-main" id="play-pause-btn" onclick="togglePlay()" title="播放 / 暂停 (空格键)">
             <svg class="icon" id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
             <svg class="icon" id="icon-pause" viewBox="0 0 24 24" style="display: none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
           </button>
-          <button class="btn-circle" onclick="skipAudio(15)" title="前进 15 秒">
+          <button class="btn-circle" onclick="skipAudio(15)" title="前进 15 秒 / 下一段">
             <svg class="icon" viewBox="0 0 24 24"><path d="M11.5 8c2.65 0 5.05 1 6.9 2.6L22 7v9h-9l3.62-3.62c-1.39-1.2-3.16-1.88-5.12-1.88-3.54 0-6.55 2.31-7.6 5.5l-2.37-.78C2.92 11.03 6.85 8 11.5 8z"/><text x="9" y="16" font-size="7" font-weight="bold" fill="currentColor">15</text></svg>
           </button>
         </div>
@@ -634,6 +636,7 @@ export function generateReaderHtml(
   <script>
     const TIMELINE = ${JSON.stringify(effectiveTimeline)};
     const audio = document.getElementById('main-audio');
+    const hasAudioTrack = audio && audio.src && audio.src.startsWith('data:audio');
     const iconPlay = document.getElementById('icon-play');
     const iconPause = document.getElementById('icon-pause');
     const trackTitle = document.getElementById('track-title');
@@ -643,8 +646,11 @@ export function generateReaderHtml(
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('overlay');
 
-    let currentSegmentIndex = -1;
+    let currentSegmentIndex = 0;
     let isSeeking = false;
+    let currentSpeed = 1.0;
+    let isWebSpeechPlaying = false;
+    let speechSynth = window.speechSynthesis;
 
     function formatTime(secs) {
       if (isNaN(secs) || secs < 0) return "00:00";
@@ -653,30 +659,130 @@ export function generateReaderHtml(
       return String(mins).padStart(2, '0') + ':' + String(s).padStart(2, '0');
     }
 
-    function togglePlay() {
-      if (!audio || !audio.src) return;
-      if (audio.paused) {
-        audio.play().catch(e => console.log('Play interrupted:', e));
+    function updatePlayIcon(isPlaying) {
+      if (isPlaying) {
+        if (iconPlay) iconPlay.style.display = 'none';
+        if (iconPause) iconPause.style.display = 'inline-block';
       } else {
-        audio.pause();
+        if (iconPlay) iconPlay.style.display = 'inline-block';
+        if (iconPause) iconPause.style.display = 'none';
+      }
+    }
+
+    function highlightCard(idx) {
+      if (idx < 0 || idx >= TIMELINE.length) return;
+      currentSegmentIndex = idx;
+      const seg = TIMELINE[idx];
+      trackTitle.innerText = '第 ' + (idx + 1) + ' / ' + TIMELINE.length + ' 段 · ' + (seg.sec_heading || '正文');
+      document.querySelectorAll('.segment-card').forEach(c => c.classList.remove('active'));
+      const safeId = (seg.sid || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const activeCard = document.getElementById('seg-' + safeId);
+      if (activeCard) {
+        activeCard.classList.add('active');
+        if (autoScrollToggle && autoScrollToggle.checked) {
+          activeCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+      document.querySelectorAll('.toc-item').forEach(t => t.classList.remove('active'));
+      const activeToc = document.getElementById('toc-' + seg.sec_path);
+      if (activeToc) activeToc.classList.add('active');
+    }
+
+    // Web Speech API 朗读段落实现
+    function speakSegmentWebSpeech(idx) {
+      if (!speechSynth) {
+        alert('当前浏览器不支持语音朗读 API');
+        return;
+      }
+      if (idx >= TIMELINE.length) {
+        isWebSpeechPlaying = false;
+        updatePlayIcon(false);
+        return;
+      }
+
+      speechSynth.cancel();
+      highlightCard(idx);
+      const seg = TIMELINE[idx];
+      const textToSpeak = seg.script || seg.src_text || '';
+
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.rate = currentSpeed;
+      utterance.lang = 'zh-CN';
+
+      utterance.onstart = () => {
+        isWebSpeechPlaying = true;
+        updatePlayIcon(true);
+        seekSlider.value = seg.start_sec;
+        trackTime.innerText = formatTime(seg.start_sec) + ' / ' + formatTime(TIMELINE[TIMELINE.length - 1].end_sec);
+      };
+
+      utterance.onend = () => {
+        if (isWebSpeechPlaying) {
+          if (idx + 1 < TIMELINE.length) {
+            speakSegmentWebSpeech(idx + 1);
+          } else {
+            isWebSpeechPlaying = false;
+            updatePlayIcon(false);
+          }
+        }
+      };
+
+      utterance.onerror = (e) => {
+        console.warn('Speech error:', e);
+        isWebSpeechPlaying = false;
+        updatePlayIcon(false);
+      };
+
+      speechSynth.speak(utterance);
+    }
+
+    function togglePlay() {
+      if (hasAudioTrack) {
+        if (audio.paused) {
+          audio.play().catch(e => console.log('Play interrupted:', e));
+        } else {
+          audio.pause();
+        }
+      } else {
+        // Web Speech 模式
+        if (isWebSpeechPlaying) {
+          if (speechSynth) speechSynth.cancel();
+          isWebSpeechPlaying = false;
+          updatePlayIcon(false);
+        } else {
+          speakSegmentWebSpeech(currentSegmentIndex);
+        }
       }
     }
 
     function skipAudio(deltaSecs) {
-      if (!audio) return;
-      audio.currentTime = Math.max(0, Math.min(audio.duration || 0, audio.currentTime + deltaSecs));
+      if (hasAudioTrack) {
+        audio.currentTime = Math.max(0, Math.min(audio.duration || 0, audio.currentTime + deltaSecs));
+      } else {
+        const nextIdx = deltaSecs > 0 ? currentSegmentIndex + 1 : Math.max(0, currentSegmentIndex - 1);
+        if (isWebSpeechPlaying) {
+          speakSegmentWebSpeech(nextIdx);
+        } else {
+          highlightCard(nextIdx);
+        }
+      }
     }
 
     function changeSpeed(val) {
-      if (!audio) return;
-      audio.playbackRate = parseFloat(val);
+      currentSpeed = parseFloat(val);
+      if (hasAudioTrack) {
+        audio.playbackRate = currentSpeed;
+      }
       localStorage.setItem('paper_playback_rate', val);
     }
 
-    function jumpToSegment(startSec) {
-      if (!audio || !audio.src) return;
-      audio.currentTime = startSec;
-      audio.play().catch(e => console.log('Play err:', e));
+    function jumpToSegment(startSec, idx) {
+      if (hasAudioTrack) {
+        audio.currentTime = startSec;
+        audio.play().catch(e => console.log('Play err:', e));
+      } else {
+        speakSegmentWebSpeech(idx);
+      }
     }
 
     function setViewMode(mode) {
@@ -694,24 +800,30 @@ export function generateReaderHtml(
 
     function onSeekInput() {
       isSeeking = true;
-      trackTime.innerText = formatTime(seekSlider.value) + ' / ' + formatTime(audio.duration || 0);
+      trackTime.innerText = formatTime(seekSlider.value) + ' / ' + formatTime(TIMELINE[TIMELINE.length - 1].end_sec || 0);
     }
 
     function onSeekChange() {
-      if (!audio) return;
-      audio.currentTime = parseFloat(seekSlider.value);
+      if (hasAudioTrack) {
+        audio.currentTime = parseFloat(seekSlider.value);
+      } else {
+        const targetSec = parseFloat(seekSlider.value);
+        let targetIdx = 0;
+        for (let i = 0; i < TIMELINE.length; i++) {
+          if (targetSec >= TIMELINE[i].start_sec) targetIdx = i;
+        }
+        if (isWebSpeechPlaying) {
+          speakSegmentWebSpeech(targetIdx);
+        } else {
+          highlightCard(targetIdx);
+        }
+      }
       isSeeking = false;
     }
 
-    if (audio) {
-      audio.addEventListener('play', () => {
-        if (iconPlay) iconPlay.style.display = 'none';
-        if (iconPause) iconPause.style.display = 'inline-block';
-      });
-      audio.addEventListener('pause', () => {
-        if (iconPlay) iconPlay.style.display = 'inline-block';
-        if (iconPause) iconPause.style.display = 'none';
-      });
+    if (hasAudioTrack) {
+      audio.addEventListener('play', () => updatePlayIcon(true));
+      audio.addEventListener('pause', () => updatePlayIcon(false));
       audio.addEventListener('timeupdate', () => {
         const cur = audio.currentTime;
         if (!isSeeking && seekSlider) {
@@ -726,21 +838,7 @@ export function generateReaderHtml(
           }
         }
         if (foundIdx !== -1 && foundIdx !== currentSegmentIndex) {
-          currentSegmentIndex = foundIdx;
-          const seg = TIMELINE[foundIdx];
-          trackTitle.innerText = '第 ' + (foundIdx + 1) + ' 段';
-          document.querySelectorAll('.segment-card').forEach(c => c.classList.remove('active'));
-          const safeId = (seg.sid || '').replace(/[^a-zA-Z0-9_-]/g, '_');
-          const activeCard = document.getElementById('seg-' + safeId);
-          if (activeCard) {
-            activeCard.classList.add('active');
-            if (autoScrollToggle && autoScrollToggle.checked) {
-              activeCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }
-          document.querySelectorAll('.toc-item').forEach(t => t.classList.remove('active'));
-          const activeToc = document.getElementById('toc-' + seg.sec_path);
-          if (activeToc) activeToc.classList.add('active');
+          highlightCard(foundIdx);
         }
 
         const curCard = document.querySelector('.segment-card.active');
@@ -766,23 +864,35 @@ export function generateReaderHtml(
       });
     }
 
+    // 快捷键支持 (空格键播放/暂停)
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && (e.target === document.body || e.target === document.documentElement)) {
+        e.preventDefault();
+        togglePlay();
+      }
+    });
+
     window.addEventListener('DOMContentLoaded', () => {
       const savedMode = localStorage.getItem('paper_view_mode') || 'interleave';
       setViewMode(savedMode);
       const savedRate = localStorage.getItem('paper_playback_rate');
-      if (savedRate && audio) {
+      if (savedRate) {
+        currentSpeed = parseFloat(savedRate);
         const el = document.getElementById('speed-select');
         if (el) el.value = savedRate;
-        audio.playbackRate = parseFloat(savedRate);
+        if (hasAudioTrack) audio.playbackRate = currentSpeed;
       }
-      const savedProgress = localStorage.getItem('paper_progress_${doc.doc_id}');
-      if (savedProgress && audio) {
-        audio.currentTime = parseFloat(savedProgress);
-      }
+      highlightCard(0);
     });
   </script>
 </body>
 </html>`
+
+  if (hasAudio) {
+    htmlTemplate = htmlTemplate.replace('{AUDIO_DATA}', audioBase64)
+  }
+
+  return htmlTemplate
 }
 
 export function downloadHtml(filename: string, content: string) {

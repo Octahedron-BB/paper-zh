@@ -1,13 +1,74 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { settingsState } from '../store/settings'
-import { KeyRound, Sparkles, Volume2, Globe, ShieldCheck, X } from 'lucide-vue-next'
+import type { TtsProvider } from '../core/types'
+import {
+  KeyRound,
+  Sparkles,
+  Volume2,
+  Globe,
+  ShieldCheck,
+  X,
+  HelpCircle,
+} from 'lucide-vue-next'
 
 const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
 const showApiKey = ref(false)
+const showWebVpnGuide = ref(false)
+
+const ttsProviders: Array<{
+  id: TtsProvider
+  name: string
+  badge: string
+  badgeColor: string
+  desc: string
+}> = [
+  {
+    id: 'edge-tts',
+    name: 'Microsoft Edge-TTS',
+    badge: '推荐 · 内置可用',
+    badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+    desc: '直接通过浏览器建立连接，微软高保真神经人声，支持逐句时间戳。',
+  },
+  {
+    id: 'web-speech',
+    name: '浏览器原生 Speech API',
+    badge: '内置 · 完全离线',
+    badgeColor: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
+    desc: '调用操作系统本地朗读引擎，无需网络开销，随时可用。',
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI TTS (tts-1 / hd)',
+    badge: '待适配 · 预留配置',
+    badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+    desc: 'OpenAI 官方高精度语音接口 (Alloy, Echo, Shimmer 等)，支持配置专属 Key。',
+  },
+  {
+    id: 'cosyvoice',
+    name: '阿里 CosyVoice / 千问',
+    badge: '待适配 · 预留配置',
+    badgeColor: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300',
+    desc: '中文顶级超自然口语合成引擎，音调与语调极具感染力。',
+  },
+  {
+    id: 'siliconflow',
+    name: '硅基流动 / IndexTTS',
+    badge: '待适配 · 预留配置',
+    badgeColor: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300',
+    desc: '国产开源语音大模型高速云端托管服务。',
+  },
+  {
+    id: 'none',
+    name: '纯文本伴读 (无语音)',
+    badge: '极速',
+    badgeColor: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300',
+    desc: '跳过语音合成阶段，仅生成中英对照与口语讲稿。',
+  },
+]
 
 const voices = [
   { id: 'zh-TW-HsiaoChenNeural', name: '台湾 · 晓臻 (HsiaoChen) - 亲切自然 · 推荐', lang: 'zh-TW' },
@@ -131,32 +192,50 @@ function handleClearStorage() {
 
         <hr class="border-slate-100 dark:border-slate-800" />
 
-        <!-- 2. TTS 语音设置 -->
+        <!-- 2. TTS 伴读引擎设置 (多引擎可选) -->
         <section class="space-y-4">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
-              <Volume2 class="w-4 h-4 text-emerald-500" />
-              <span>Edge-TTS 伴读朗读</span>
-            </div>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" v-model="settingsState.enableTts" class="sr-only peer" />
-              <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-            </label>
+          <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
+            <Volume2 class="w-4 h-4 text-emerald-500" />
+            <span>伴读语音合成引擎 (TTS Engine)</span>
           </div>
 
-          <div v-if="settingsState.enableTts" class="space-y-3 pl-1">
+          <!-- 引擎卡片选择器 -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div
+              v-for="provider in ttsProviders"
+              :key="provider.id"
+              @click="settingsState.ttsProvider = provider.id"
+              :class="[
+                'p-3 rounded-xl border cursor-pointer transition text-left flex flex-col justify-between gap-1.5',
+                settingsState.ttsProvider === provider.id
+                  ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+              ]"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-semibold text-xs text-slate-900 dark:text-slate-100">{{ provider.name }}</span>
+                <span :class="['text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0', provider.badgeColor]">
+                  {{ provider.badge }}
+                </span>
+              </div>
+              <p class="text-[11px] text-slate-500 leading-snug">{{ provider.desc }}</p>
+            </div>
+          </div>
+
+          <!-- Edge-TTS 专属配置 -->
+          <div v-if="settingsState.ttsProvider === 'edge-tts'" class="space-y-3 pt-2 bg-slate-50/60 dark:bg-slate-800/40 p-3.5 rounded-xl border border-slate-200/60 dark:border-slate-800">
             <div>
-              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">朗读音色</label>
+              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Edge-TTS 推荐音色</label>
               <select
                 v-model="settingsState.ttsVoice"
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 text-xs"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
               >
                 <option v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}</option>
               </select>
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">朗读语速</label>
+              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">朗读语速调节</label>
               <div class="grid grid-cols-4 gap-2">
                 <button
                   v-for="r in speedRates"
@@ -167,7 +246,7 @@ function handleClearStorage() {
                     'py-1.5 px-2 rounded-lg border text-xs text-center transition',
                     settingsState.ttsRate === r.value
                       ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-semibold'
-                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                   ]"
                 >
                   {{ r.label }}
@@ -175,27 +254,77 @@ function handleClearStorage() {
               </div>
             </div>
           </div>
-          <div v-else class="text-xs text-slate-400 italic">
-            已禁用 TTS。工作流将只生成中英对照与口语讲稿文本，节省时间和网络开销。
+
+          <!-- 预留其他 TTS (OpenAI / CosyVoice / SiliconFlow) 配置项 -->
+          <div
+            v-else-if="['openai', 'cosyvoice', 'siliconflow'].includes(settingsState.ttsProvider)"
+            class="space-y-3 pt-2 bg-amber-50/40 dark:bg-amber-950/20 p-3.5 rounded-xl border border-amber-200/60 dark:border-amber-900/40"
+          >
+            <div class="text-xs text-amber-800 dark:text-amber-300 font-medium flex items-center gap-1.5">
+              <span>⚠️ 该引擎接口已预留，目前工作流运行中会自动无缝切换至浏览器原生语音播报。</span>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+                {{ settingsState.ttsProvider.toUpperCase() }} API Key (预留)
+              </label>
+              <input
+                type="password"
+                v-model="settingsState.customTtsApiKey"
+                placeholder="sk-..."
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs font-mono"
+              />
+            </div>
           </div>
         </section>
 
         <hr class="border-slate-100 dark:border-slate-800" />
 
-        <!-- 3. 高校机构反代 (可选) -->
+        <!-- 3. 高校机构 WebVPN 反代指引 -->
         <section class="space-y-3">
-          <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
-            <Globe class="w-4 h-4 text-purple-500" />
-            <span>高校/机构 WebVPN 反代 (可选，仅用于抓取 HTML 全文)</span>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
+              <Globe class="w-4 h-4 text-purple-500" />
+              <span>高校/机构 WebVPN 全文获取 (指南与反代)</span>
+            </div>
+            <button
+              type="button"
+              @click="showWebVpnGuide = !showWebVpnGuide"
+              class="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 flex items-center gap-1"
+            >
+              <HelpCircle class="w-3.5 h-3.5" />
+              <span>{{ showWebVpnGuide ? '收起教程' : '怎么使用？' }}</span>
+            </button>
           </div>
+
+          <!-- 展开的详细 WebVPN 指南 -->
+          <div
+            v-if="showWebVpnGuide"
+            class="p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 text-xs space-y-2 text-slate-700 dark:text-slate-300 animate-fade-in"
+          >
+            <div class="font-semibold text-purple-900 dark:text-purple-200">📚 为什么以及如何使用高校文献权限：</div>
+            <p>由于 Nature 期刊正文需要高校订阅权限，且浏览器存在跨域安全限制（CORS），推荐以下两种用法：</p>
+            <div class="space-y-1.5 pl-2 border-l-2 border-purple-400">
+              <p>
+                <strong>方法 1（最推荐 · 零门槛）：</strong>
+                在学校 WebVPN 或校园网打开 Nature 论文网页，直接在浏览器按 <kbd class="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border font-mono">Ctrl+S</kbd> / <kbd class="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border font-mono">Cmd+S</kbd>，另存为「网页，仅 HTML」，然后拖入本站首页虚线框，即可完美提取！
+              </p>
+              <p>
+                <strong>方法 2（高级用户）：</strong>
+                配置 Cloudflare Worker 或支持 CORS 透传的代理服务器，并在下方填入反代地址与 WebVPN Cookie（如 <code>wengine_vpn_ticket</code>），即可在网页中直接输入 DOI 一键抓取。
+              </p>
+            </div>
+          </div>
+
           <div class="space-y-2">
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">
+              自定义 CORS 反代 URL (可选)
+            </label>
             <input
               type="text"
               v-model="settingsState.academicProxyUrl"
-              placeholder="https://webvpn.univ.edu.cn"
+              placeholder="https://your-cors-proxy.workers.dev/?url=https://webvpn.univ.edu.cn"
               class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 text-xs font-mono"
             />
-            <p class="text-[11px] text-slate-400">若无反代，可直接在首页上传下载好的 Nature HTML 或 PDF 文件。</p>
           </div>
         </section>
 
