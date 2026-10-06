@@ -361,16 +361,34 @@ function handleClearStorage() {
           </div>
 
           <!-- Custom Base URL -->
-          <div v-if="settingsState.llmProvider === 'custom'">
-            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
-              自定义 API Base URL (OpenAI 兼容协议)
-            </label>
-            <input
-              type="text"
-              v-model="settingsState.customBaseUrl"
-              placeholder="https://api.yourproxy.com/v1"
-              class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 font-mono text-xs"
-            />
+          <div v-if="settingsState.llmProvider === 'custom'" class="space-y-2">
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                  自定义 API Base URL (OpenAI 兼容协议)
+                </label>
+                <button
+                  type="button"
+                  @click="
+                    settingsState.customBaseUrl = 'http://localhost:11434/v1';
+                    settingsState.model = 'qwen2.5:7b';
+                    if (!settingsState.apiKey) settingsState.apiKey = 'ollama';
+                  "
+                  class="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
+                >
+                  ⚡ 一键填入 Ollama 本地模型 (Mac 芯片 GPU 加速)
+                </button>
+              </div>
+              <input
+                type="text"
+                v-model="settingsState.customBaseUrl"
+                placeholder="https://api.yourproxy.com/v1 或 http://localhost:11434/v1"
+                class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-900 dark:text-slate-100 font-mono text-xs"
+              />
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              💡 提示：在电脑终端运行 <code class="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">ollama run qwen2.5:7b</code> 即可充分利用电脑本地统一内存与 GPU 算力，离线、零 API 成本且无网络往返延迟。
+            </p>
           </div>
         </section>
 

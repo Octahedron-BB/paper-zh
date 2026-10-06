@@ -10,102 +10,20 @@ import { savePaperToLibrary } from '../store/library'
 
 export type ProgressCallback = (progress: PipelineProgress) => void
 
-export async function runDocumentPipeline(
-  doc: Document,
-  settings: Settings,
-  onProgress: ProgressCallback
-): Promise<string> {
-  const logs: string[] = []
-  function emit(stage: PipelineProgress['stage'], current: number, total: number, message: string) {
-    const percent = total > 0 ? Math.round((current / total) * 100) : 0
-    logs.push(`[${new Date().toLocaleTimeString()}] ${message}`)
-    onProgress({
-      stage,
-      current,
-      total,
-      percent,
-      message,
-      logs: [...logs],
-    })
-  }
-
-  try {
-    emit('segment', 1, 1, `文档结构解析完成: 共 ${doc.sections.length} 个章节，${doc.segments.length} 个段落`)
-
-    // 2. 术语与缩写提取
-    emit('terms', 0, 1, '正在进行全文缩写与专业术语模式扫描...')
-    const abbrevs = extractDocAbbreviations(doc)
-    emit('terms', 1, 1, `缩写扫描完成: 捕获到 ${abbrevs.length} 个首字母缩写定义`)
-
-    // 构建 LLM 客户端
-    const llm = new LlmClient(settings)
-    const translations: Record<string, string> = {}
-    const scripts: Record<string, string> = {}
-
-    const totalSegs = doc.segments.length
-
-    // 3. 忠实翻译 (Track A)
-    emit('translate', 0, totalSegs, '开始执行高精度学术双语忠实翻译...')
-    for (let i = 0; i < totalSegs; i++) {
-      const seg = doc.segments[i]
-      const terms = matchGlossaryTerms(seg.src_text)
-      const hints = renderPromptBlock(terms)
-
-      const systemPrompt = TRANSLATE_SYSTEM + (hints ? `\n\n【本段专业术语规范】\n${hints}` : '')
-      const userPrompt = `【待译段落 (章节: ${seg.sec_heading})】:\n${seg.src_text}`
-
-      emit('translate', i + 1, totalSegs, `翻译进度 (${i + 1}/${totalSegs}): ${seg.sec_heading}`)
-
-      try {
-        const rawZh = await llm.chat(
-          [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          0.3
-        )
-
-        // 应用硬替换规则
-        const finalZh = applyHardReplace(terms, rawZh)
-        translations[seg.sid] = finalZh
-      } catch (err: any) {
-        emit('translate', i + 1, totalSegs, `段落 ${seg.sid} 翻译遇阻: ${err.message}`)
-        translations[seg.sid] = `[翻译失败: ${err.message}]`
-      }
+async function runConcurrent<T>(
+  items: T[],
+  limit: number,
+  task: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  let nextIdx = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIdx < items.length) {
+      const idx = nextIdx++
+      await task(items[idx], idx)
     }
-
-    // 4. 口语化伴读讲稿生成 (Track B: script-v3)
-    emit('script', 0, totalSegs, '开始生成自然听感口语伴读讲稿 (自然连词、听觉数字重塑)...')
-    for (let i = 0; i < totalSegs; i++) {
-      const seg = doc.segments[i]
-      const zh = translations[seg.sid] || ''
-
-      const userPrompt = `【章节】${seg.sec_heading}\n【段落序号】${i + 1}/${totalSegs}\n【中文初译】\n${zh}\n\n【英文原文参考】\n${seg.src_text}`
-
-      emit('script', i + 1, totalSegs, `改写讲稿 (${i + 1}/${totalSegs}): ${seg.sec_heading}`)
-
-      try {
-        const rawScript = await llm.chat(
-          [
-            { role: 'system', content: SCRIPT_SYSTEM },
-            { role: 'user', content: userPrompt },
-          ],
-          0.4
-        )
-
-        // 应用多音字发音清洗
-        const cleanScript = cleanForTts(rawScript)
-        scripts[seg.sid] = cleanScript
-      } catch (err: any) {
-        emit('script', i + 1, totalSegs, `段落 ${seg.sid} 讲稿改写遇阻: ${err.message}`)
-        scripts[seg.sid] = zh // fallback
-      }
-    }
-
-    // 5. 语音合成 (TTS)
-    const timeline: any[] = []
-    const audioBlobs: Blob[] = []
-    let combinedAudioBase64 = ''
+  })
+  await Promise.all(workers)
+}
 
 async function getAudioBlobDuration(blob: Blob): Promise<number> {
   // 1. Web Audio API 物理音频解码 (微秒级精确计算)
@@ -252,42 +170,178 @@ function alignSentencesWithTimestamps(
   return result
 }
 
-    if (settings.enableTts && settings.ttsProvider === 'edge-tts') {
-      emit('audio', 0, totalSegs, '正在调用 Edge-TTS 生成沉浸式全篇朗读与时间戳...')
-      let cumulativeTimeSec = 0
+export async function runDocumentPipeline(
+  doc: Document,
+  settings: Settings,
+  onProgress: ProgressCallback
+): Promise<string> {
+  const logs: string[] = []
+  function emit(stage: PipelineProgress['stage'], current: number, total: number, message: string) {
+    const percent = total > 0 ? Math.round((current / total) * 100) : 0
+    logs.push(`[${new Date().toLocaleTimeString()}] ${message}`)
+    onProgress({
+      stage,
+      current,
+      total,
+      percent,
+      message,
+      logs: [...logs],
+    })
+  }
 
+  try {
+    emit('segment', 1, 1, `文档结构解析完成: 共 ${doc.sections.length} 个章节，${doc.segments.length} 个段落`)
+
+    // 2. 术语与缩写提取
+    emit('terms', 0, 1, '正在进行全文缩写与专业术语模式扫描...')
+    const abbrevs = extractDocAbbreviations(doc)
+    emit('terms', 1, 1, `缩写扫描完成: 捕获到 ${abbrevs.length} 个首字母缩写定义`)
+
+    // 构建 LLM 客户端
+    const llm = new LlmClient(settings)
+    const translations: Record<string, string> = {}
+    const scripts: Record<string, string> = {}
+
+    const totalSegs = doc.segments.length
+
+    // 3. 忠实翻译 (Track A) - 4 线程并发加速
+    emit('translate', 0, totalSegs, '开始执行高精度学术双语忠实翻译 (4 线程并发加速)...')
+    let completedTrans = 0
+    await runConcurrent(doc.segments, 4, async (seg) => {
+      const terms = matchGlossaryTerms(seg.src_text)
+      const hints = renderPromptBlock(terms)
+
+      const systemPrompt = TRANSLATE_SYSTEM + (hints ? `\n\n【本段专业术语规范】\n${hints}` : '')
+      const userPrompt = `【待译段落 (章节: ${seg.sec_heading})】:\n${seg.src_text}`
+
+      try {
+        const rawZh = await llm.chat(
+          [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          0.3
+        )
+
+        // 应用硬替换规则
+        const finalZh = applyHardReplace(terms, rawZh)
+        translations[seg.sid] = finalZh
+      } catch (err: any) {
+        emit('translate', completedTrans, totalSegs, `段落 ${seg.sid} 翻译遇阻: ${err.message}`)
+        translations[seg.sid] = `[翻译失败: ${err.message}]`
+      } finally {
+        completedTrans++
+        emit('translate', completedTrans, totalSegs, `翻译完成 (${completedTrans}/${totalSegs}): ${seg.sec_heading}`)
+      }
+    })
+
+    // 4. 口语化伴读讲稿生成 (Track B: script-v3) - 4 线程并发加速
+    emit('script', 0, totalSegs, '开始生成自然听感口语伴读讲稿 (4 线程并发加速)...')
+    let completedScript = 0
+    await runConcurrent(doc.segments, 4, async (seg, i) => {
+      const zh = translations[seg.sid] || ''
+
+      const userPrompt = `【章节】${seg.sec_heading}\n【段落序号】${i + 1}/${totalSegs}\n【中文初译】\n${zh}\n\n【英文原文参考】\n${seg.src_text}`
+
+      try {
+        const rawScript = await llm.chat(
+          [
+            { role: 'system', content: SCRIPT_SYSTEM },
+            { role: 'user', content: userPrompt },
+          ],
+          0.4
+        )
+
+        // 应用多音字发音清洗
+        const cleanScript = cleanForTts(rawScript)
+        scripts[seg.sid] = cleanScript
+      } catch (err: any) {
+        emit('script', completedScript, totalSegs, `段落 ${seg.sid} 讲稿改写遇阻: ${err.message}`)
+        scripts[seg.sid] = zh // fallback
+      } finally {
+        completedScript++
+        emit('script', completedScript, totalSegs, `改写完成 (${completedScript}/${totalSegs}): ${seg.sec_heading}`)
+      }
+    })
+
+    // 5. 语音合成 (TTS) - 3 线程并发加速与容错对齐
+    const timeline: any[] = []
+    const audioBlobs: Blob[] = []
+    let combinedAudioBase64 = ''
+
+    if (settings.enableTts && settings.ttsProvider === 'edge-tts') {
+      emit('audio', 0, totalSegs, '正在调用 Edge-TTS 生成沉浸式全篇朗读与时间戳 (3 线程并发加速)...')
+
+      interface SegTtsResult {
+        audioBlob?: Blob
+        durationSec: number
+        timestamps: any[]
+        scriptText: string
+      }
+      const ttsResults: (SegTtsResult | null)[] = new Array(totalSegs).fill(null)
+      let completedAudio = 0
+
+      await runConcurrent(doc.segments, 3, async (seg, i) => {
+        const scriptText = scripts[seg.sid] || translations[seg.sid] || ''
+        if (!scriptText.trim()) {
+          ttsResults[i] = { durationSec: 0, timestamps: [], scriptText: '' }
+          completedAudio++
+          emit('audio', completedAudio, totalSegs, `跳过空白段 (${completedAudio}/${totalSegs})`)
+          return
+        }
+
+        let res: any = null
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            res = await synthesizeEdgeTts(
+              scriptText,
+              settings.ttsVoice,
+              settings.ttsRate
+            )
+            if (res && res.audioBlob && res.audioBlob.size > 0) break
+          } catch (e) {
+            if (attempt === 3) {
+              emit('audio', completedAudio, totalSegs, `段落 ${seg.sid} 重试 3 次后受限: ${e}`)
+            }
+            await new Promise((r) => setTimeout(r, 500 * attempt))
+          }
+        }
+
+        let trueAudioDur = 0
+        if (res?.audioBlob && res.audioBlob.size > 0) {
+          trueAudioDur = await getAudioBlobDuration(res.audioBlob)
+        }
+
+        ttsResults[i] = {
+          audioBlob: res?.audioBlob,
+          durationSec: trueAudioDur > 0 ? trueAudioDur : (res?.durationSec || 0),
+          timestamps: res?.timestamps || [],
+          scriptText,
+        }
+
+        completedAudio++
+        emit('audio', completedAudio, totalSegs, `语音合成 (${completedAudio}/${totalSegs}): ${seg.sec_heading}`)
+      })
+
+      // 严格按段落顺序拼装音频流与时间戳（绝对杜绝段落缺失引起的级联错位）
+      let cumulativeTimeSec = 0
       for (let i = 0; i < totalSegs; i++) {
         const seg = doc.segments[i]
-        const scriptText = scripts[seg.sid] || translations[seg.sid] || ''
+        const r = ttsResults[i]
+        const scriptText = r?.scriptText || ''
+        const hasValidAudio = !!(r?.audioBlob && r.audioBlob.size > 0)
 
-        emit('audio', i + 1, totalSegs, `合成语音 (${i + 1}/${totalSegs}): ${seg.sec_heading}`)
-
-        try {
-          const ttsRes = await synthesizeEdgeTts(
-            scriptText,
-            settings.ttsVoice,
-            settings.ttsRate
-          )
-
-          // 核心校准：使用真实 MP3 音频二进制流的物理采样时长，彻底消除累积时间轴漂移
-          let trueAudioDur = 0
-          if (ttsRes.audioBlob && ttsRes.audioBlob.size > 0) {
-            trueAudioDur = await getAudioBlobDuration(ttsRes.audioBlob)
-          }
-
-          const segDuration = trueAudioDur > 0
-            ? trueAudioDur
-            : (ttsRes.durationSec > 0 ? ttsRes.durationSec : Math.max(3, scriptText.length * 0.28))
-
+        if (hasValidAudio && r && r.audioBlob) {
+          audioBlobs.push(r.audioBlob)
+          const segDuration = r.durationSec
           const startSec = cumulativeTimeSec
           const endSec = startSec + segDuration
           cumulativeTimeSec = endSec
 
-          // 聚合为自然完整句时间戳（彻底避免字级/词级碎片化展示）
           const rawSentences = splitTextIntoSentences(scriptText)
           const sentences = alignSentencesWithTimestamps(
             rawSentences,
-            ttsRes.timestamps,
+            r.timestamps,
             startSec,
             segDuration
           )
@@ -302,32 +356,19 @@ function alignSentencesWithTimestamps(
             script: scriptText,
             sentences,
           })
-
-          if (ttsRes.audioBlob && ttsRes.audioBlob.size > 0) {
-            audioBlobs.push(ttsRes.audioBlob)
-          }
-        } catch (err: any) {
-          emit('audio', i + 1, totalSegs, `段落 ${seg.sid} TTS 合成受限: ${err.message}，启用浏览器朗读后备`)
-          const estDuration = Math.max(3, scriptText.length * 0.28)
-          const startSec = cumulativeTimeSec
-          const endSec = startSec + estDuration
-          cumulativeTimeSec = endSec
+        } else {
+          // 该段语音合成失败或为空：
+          // 核心修复：严禁在音频时间轴上虚借时长！没有物理音频就占用 0 秒，避免后续段落与音频整体偏移错位！
           const rawSentences = splitTextIntoSentences(scriptText)
-          const sentences = alignSentencesWithTimestamps(
-            rawSentences,
-            [],
-            startSec,
-            estDuration
-          )
           timeline.push({
             sid: seg.sid,
             sec_path: seg.sec_path,
             sec_heading: seg.sec_heading,
-            start_sec: startSec,
-            end_sec: endSec,
-            duration_sec: estDuration,
+            start_sec: cumulativeTimeSec,
+            end_sec: cumulativeTimeSec,
+            duration_sec: 0,
             script: scriptText,
-            sentences,
+            sentences: rawSentences.map((st) => ({ text: st, start_sec: cumulativeTimeSec, end_sec: cumulativeTimeSec })),
           })
         }
       }

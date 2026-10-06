@@ -42,32 +42,46 @@ export async function synthesizeEdgeTts(
   voice = 'zh-TW-HsiaoChenNeural',
   rate = '+0%'
 ): Promise<TtsResult> {
-  // 1. 优先调用后端/开发服务器 Edge-TTS 代理 (采用 Node.js 最新 Sec-MS-GEC 签名，确保 100% 真实云端音色)
-  try {
-    const res = await fetch('/api/edge-tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice, rate }),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      if (data && data.audioBase64) {
-        const binary = atob(data.audioBase64)
-        const bytes = new Uint8Array(binary.length)
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i)
-        }
-        const blob = new Blob([bytes], { type: 'audio/mp3' })
-        return {
-          audioBlob: blob,
-          audioBase64: data.audioBase64,
-          durationSec: data.durationSec || Math.max(1, text.length * 0.28),
-          timestamps: data.timestamps || [],
+  if (!text || !text.trim()) {
+    return {
+      audioBlob: new Blob([], { type: 'audio/mp3' }),
+      audioBase64: '',
+      durationSec: 0,
+      timestamps: [],
+    }
+  }
+
+  // 1. 优先调用后端/开发服务器 Edge-TTS 代理 (采用 Node.js 最新 Sec-MS-GEC 签名，带重试保护)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch('/api/edge-tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice, rate }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data && data.audioBase64) {
+          const binary = atob(data.audioBase64)
+          const bytes = new Uint8Array(binary.length)
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i)
+          }
+          const blob = new Blob([bytes], { type: 'audio/mp3' })
+          return {
+            audioBlob: blob,
+            audioBase64: data.audioBase64,
+            durationSec: data.durationSec || Math.max(1, text.length * 0.28),
+            timestamps: data.timestamps || [],
+          }
         }
       }
+    } catch {
+      // 失败稍候重试
     }
-  } catch {
-    // 代理不可用时继续回退
+    if (attempt < 3) {
+      await new Promise((r) => setTimeout(r, 400 * attempt))
+    }
   }
 
   // 2. 直接 WebSocket 降级尝试

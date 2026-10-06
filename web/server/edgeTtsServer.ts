@@ -65,6 +65,14 @@ export function synthesizeEdgeTtsNode(
   voice = 'zh-TW-HsiaoChenNeural',
   rate = '+0%'
 ): Promise<{ audioBase64: string; durationSec: number; timestamps: any[] }> {
+  if (!text || !text.trim()) {
+    return Promise.resolve({
+      audioBase64: '',
+      durationSec: 0,
+      timestamps: [],
+    })
+  }
+
   return new Promise((resolve, reject) => {
     const connectionId = crypto.randomUUID().replace(/-/g, '')
     const requestId = crypto.randomUUID().replace(/-/g, '')
