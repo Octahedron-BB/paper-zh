@@ -433,60 +433,75 @@ function handleActionForFeedItem(item: FeedItem) {
           </div>
         </div>
 
-        <!-- Card Footer Actions -->
-        <div class="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100/80 dark:border-slate-800/80">
-          <div class="flex flex-wrap items-center gap-2">
+        <!-- Card Footer Actions: 桌面端优雅拉开，手机端精简文案单行排布 -->
+        <div class="flex items-center justify-between gap-1.5 sm:gap-2.5 pt-2 border-t border-slate-100/80 dark:border-slate-800/80">
+          <div class="flex items-center gap-1.5 sm:gap-2">
+            <!-- 展开详情按钮 -->
             <button
               @click="toggleExpand(item.doi || item.doc_id)"
-              class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 transition whitespace-nowrap"
+              class="text-[11px] sm:text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-0 py-1 transition whitespace-nowrap"
             >
-              <span>{{ expandedDoi[item.doi || item.doc_id] ? '收起详情' : '展开全文摘要' }}</span>
-              <ChevronUp v-if="expandedDoi[item.doi || item.doc_id]" class="w-3.5 h-3.5" />
-              <ChevronDown v-else class="w-3.5 h-3.5" />
+              <span>{{ expandedDoi[item.doi || item.doc_id] ? '收起' : '摘要' }}</span>
+              <span class="hidden sm:inline">{{ expandedDoi[item.doi || item.doc_id] ? '详情' : '全文' }}</span>
+              <ChevronUp v-if="expandedDoi[item.doi || item.doc_id]" class="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <ChevronDown v-else class="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             </button>
 
             <!-- AI 提要按钮 -->
             <button
               @click="handleGenerateDigest(item)"
               :disabled="digestingDoi[item.doi || item.doc_id]"
-              class="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 font-medium flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition whitespace-nowrap"
+              class="text-[11px] sm:text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 font-medium flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition whitespace-nowrap"
               title="根据英文摘要由 AI 提炼精准学术中文标题与机制要点"
             >
               <Sparkles :class="['w-3 h-3', digestingDoi[item.doi || item.doc_id] ? 'animate-spin' : '']" />
-              <span>{{ digestingDoi[item.doi || item.doc_id] ? '提炼中...' : (item.detail && item.detail !== item.abstract ? '重新AI提炼' : 'AI 提炼导读') }}</span>
+              <span>
+                {{
+                  digestingDoi[item.doi || item.doc_id]
+                    ? '提炼中...'
+                    : (item.detail && item.detail !== item.abstract
+                        ? '重新AI提炼'
+                        : 'AI导读')
+                }}
+              </span>
             </button>
           </div>
 
-          <div class="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
+          <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <!-- 原刊外链 -->
             <a
               v-if="item.doi"
               :href="`https://doi.org/${item.doi}`"
               target="_blank"
-              class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs flex items-center gap-1 transition whitespace-nowrap"
+              class="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-[11px] sm:text-xs flex items-center gap-0.5 sm:gap-1 transition whitespace-nowrap"
+              title="前往官方期刊原文"
             >
-              <span>原刊链接</span>
+              <span>原刊</span>
+              <span class="hidden sm:inline">链接</span>
               <ExternalLink class="w-3 h-3" />
             </a>
 
+            <!-- 打开伴读 / 制作伴读按钮 -->
             <button
               v-if="savedDocIds.has(item.doc_id)"
               @click="emit('open-saved-reader', item.doc_id)"
-              class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm transition whitespace-nowrap"
+              class="px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[11px] sm:text-xs flex items-center gap-1 sm:gap-1.5 shadow-sm transition whitespace-nowrap"
             >
-              <BookOpen class="w-3.5 h-3.5" />
+              <BookOpen class="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               <span>打开伴读</span>
             </button>
             <button
               v-else
               @click="handleActionForFeedItem(item)"
-              class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm shadow-blue-500/20 transition whitespace-nowrap"
+              class="px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-[11px] sm:text-xs flex items-center gap-1 sm:gap-1.5 shadow-sm shadow-blue-500/20 transition whitespace-nowrap"
             >
-
-              <FileUp class="w-3.5 h-3.5" />
-              <span>导入全文制作</span>
+              <FileUp class="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <span class="sm:hidden">导入制作</span>
+              <span class="hidden sm:inline">导入全文制作</span>
             </button>
           </div>
         </div>
+
       </div>
     </div>
 
