@@ -62,10 +62,10 @@ const modelPresets: Record<LlmProvider, string[]> = {
     'gpt-4.5-preview',
   ],
   gemini: [
+    'gemini-3.8-flash',
+    'gemini-2.5-flash',
     'gemini-1.5-flash',
-    'gemini-2.0-flash',
     'gemini-1.5-pro',
-    'gemini-2.0-pro-exp',
   ],
   custom: [
     'qwen2.5:7b',
@@ -630,9 +630,13 @@ function handleClearStorage() {
             </div>
 
             <!-- Gemini 专属贴心提示 -->
-            <p v-if="draft.llmProvider === 'gemini'" class="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1.5 flex items-center gap-1">
-              ✨ <b>新手友好</b>：若您尚未申请 Key，留空即可通过安全反代免费体验 Gemini 伴读翻译；填入您自己的 Key 则直连官方。
-            </p>
+            <div v-if="draft.llmProvider === 'gemini'" class="mt-2 p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/40 text-[11px] text-emerald-800 dark:text-emerald-200 leading-relaxed flex items-start gap-1.5">
+              <span class="shrink-0 mt-0.5">✨</span>
+              <div>
+                <span class="font-semibold text-emerald-900 dark:text-emerald-100 whitespace-nowrap">新手免配置：</span>
+                <span>若您暂未申请 Key，留空即可通过安全反代免费体验 Gemini 伴读；若填写私有 Key 则直连官方。</span>
+              </div>
+            </div>
             <p v-else class="text-[11px] text-slate-400 mt-1">每个厂商的密钥均独立保留，切换厂商不会相互覆盖；数据 100% 留存在浏览器本地。</p>
           </div>
 

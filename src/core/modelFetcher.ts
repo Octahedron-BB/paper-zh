@@ -21,16 +21,28 @@ export async function fetchAvailableModels(
 
   if (provider === 'gemini') {
     if (!trimmedKey) {
-      // 没填 Key 时，尝试通过反代请求模型列表
-      const proxyUrl = options?.geminiProxyUrl || 'https://edge-tts-proxy.ryoctahedron1998.workers.dev/api/gemini/models'
-      const resp = await fetch(proxyUrl, { method: 'GET' })
-      if (!resp.ok) {
-        const errJson = await resp.json().catch(() => null)
-        throw new Error(errJson?.error?.message || `获取公共 Gemini 模型失败 (${resp.status})`)
+      // 没填 Key 时，尝试通过反代请求模型列表；若 Worker 尚未重新部署 /models 路由，平滑回退
+      const proxyUrl = options?.geminiProxyUrl 
+        ? (options.geminiProxyUrl.replace(/\/+$/, '') + '/models')
+        : 'https://edge-tts-proxy.ryoctahedron1998.workers.dev/api/gemini/models'
+      try {
+        const resp = await fetch(proxyUrl, { method: 'GET' })
+        if (resp.ok) {
+          const data = await resp.json()
+          const list = data.models || data.data || []
+          const parsed = parseGeminiModels(list)
+          if (parsed.length > 0) return parsed
+        }
+      } catch (e) {
+        // ignore proxy network error and fallback below
       }
-      const data = await resp.json()
-      const list = data.models || data.data || []
-      return parseGeminiModels(list)
+
+      // 平滑回退：返回当前 Worker 免费层级支持的主流模型
+      return [
+        { id: 'gemini-3.8-flash', name: 'gemini-3.8-flash (公共试用推荐 · 极速)' },
+        { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash (轻量稳定版)' },
+        { id: 'gemini-1.5-flash', name: 'gemini-1.5-flash (标准版)' },
+      ]
     }
 
     // 用户填写了自己的 Gemini Key：直接请求 Google AI Studio API

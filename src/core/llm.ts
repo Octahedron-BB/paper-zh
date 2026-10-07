@@ -44,7 +44,7 @@ export class LlmClient {
       headers['Authorization'] = `Bearer ${activeKey}`
       reqModel = activeModel || 'gpt-4o-mini'
     } else if (llmProvider === 'gemini') {
-      reqModel = activeModel || 'gemini-1.5-flash'
+      reqModel = activeModel || 'gemini-3.8-flash'
       if (activeKey) {
         // 用户填写了私有 Key：直接调用 Google AI Studio 官方端点
         url = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'

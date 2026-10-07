@@ -275,13 +275,13 @@ function handleActionForFeedItem(item: FeedItem) {
         />
       </div>
 
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
         <!-- 语言显示切换 -->
-        <div class="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px]">
+        <div class="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] shrink-0">
           <button
             @click="displayLang = 'zh'"
             :class="[
-              'px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1',
+              'px-2 sm:px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 whitespace-nowrap',
               displayLang === 'zh'
                 ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -293,7 +293,7 @@ function handleActionForFeedItem(item: FeedItem) {
           <button
             @click="displayLang = 'en'"
             :class="[
-              'px-2.5 py-1 rounded-lg font-medium transition',
+              'px-2 sm:px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap',
               displayLang === 'en'
                 ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -304,48 +304,50 @@ function handleActionForFeedItem(item: FeedItem) {
         </div>
 
         <!-- 时间窗口切换 -->
-        <div class="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px]">
+        <div class="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] shrink-0">
           <button
             v-for="d in [7, 14, 30]"
             :key="d"
             @click="handleRefreshPubMed(d)"
             :disabled="loading"
             :class="[
-              'px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1',
+              'px-2 sm:px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 whitespace-nowrap',
               selectedDays === d
                 ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm font-semibold'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
             ]"
           >
-            <span>{{ d === 7 ? '近一周 (7天)' : `近 ${d} 天` }}</span>
+            <span>{{ d === 7 ? '近7天' : `近${d}天` }}</span>
           </button>
         </div>
 
         <!-- 篇数统计徽标 -->
-        <span class="text-[11px] text-slate-500 dark:text-slate-400 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium shrink-0">
-          共 {{ filteredItems.length }} 篇
+        <span class="text-[11px] text-slate-500 dark:text-slate-400 px-2 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium shrink-0 whitespace-nowrap">
+          {{ filteredItems.length }} 篇
         </span>
 
         <!-- 批量 AI 提要按钮 -->
         <button
           @click="handleBatchDigest"
           :disabled="isBatchDigesting || loading"
-          class="px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-xs font-medium flex items-center gap-1.5 transition"
+          class="px-2.5 sm:px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-xs font-medium flex items-center gap-1.5 transition shrink-0 whitespace-nowrap"
           title="使用 LLM 自动将本页全部文献摘要提炼为地道学术中文标题与机制速览"
         >
-          <Sparkles :class="['w-3.5 h-3.5 text-indigo-500', isBatchDigesting ? 'animate-spin' : '']" />
-          <span>{{ isBatchDigesting ? '批量提炼中...' : '一键 AI 导读' }}</span>
+          <Sparkles :class="['w-3.5 h-3.5 text-indigo-500 shrink-0', isBatchDigesting ? 'animate-spin' : '']" />
+          <span>{{ isBatchDigesting ? '提炼中...' : '一键 AI 导读' }}</span>
         </button>
 
         <button
           @click="handleRefreshPubMed(selectedDays)"
           :disabled="loading"
-          class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium flex items-center gap-1.5 transition"
+          class="p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium flex items-center gap-1.5 transition shrink-0"
+          title="刷新文献"
         >
           <RefreshCw :class="['w-3.5 h-3.5', loading ? 'animate-spin text-blue-500' : '']" />
-          <span>刷新</span>
+          <span class="hidden sm:inline">刷新</span>
         </button>
       </div>
+
     </div>
 
     <!-- Literature Cards Feed -->
@@ -429,11 +431,11 @@ function handleActionForFeedItem(item: FeedItem) {
         </div>
 
         <!-- Card Footer Actions -->
-        <div class="flex items-center justify-between pt-2">
-          <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100/80 dark:border-slate-800/80">
+          <div class="flex flex-wrap items-center gap-2">
             <button
               @click="toggleExpand(item.doi || item.doc_id)"
-              class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 transition"
+              class="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 transition whitespace-nowrap"
             >
               <span>{{ expandedDoi[item.doi || item.doc_id] ? '收起详情' : '展开全文摘要' }}</span>
               <ChevronUp v-if="expandedDoi[item.doi || item.doc_id]" class="w-3.5 h-3.5" />
@@ -444,7 +446,7 @@ function handleActionForFeedItem(item: FeedItem) {
             <button
               @click="handleGenerateDigest(item)"
               :disabled="digestingDoi[item.doi || item.doc_id]"
-              class="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 font-medium flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition"
+              class="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 font-medium flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition whitespace-nowrap"
               title="根据英文摘要由 AI 提炼精准学术中文标题与机制要点"
             >
               <Sparkles :class="['w-3 h-3', digestingDoi[item.doi || item.doc_id] ? 'animate-spin' : '']" />
@@ -452,12 +454,12 @@ function handleActionForFeedItem(item: FeedItem) {
             </button>
           </div>
 
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
             <a
               v-if="item.doi"
               :href="`https://doi.org/${item.doi}`"
               target="_blank"
-              class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs flex items-center gap-1 transition"
+              class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs flex items-center gap-1 transition whitespace-nowrap"
             >
               <span>原刊链接</span>
               <ExternalLink class="w-3 h-3" />
@@ -466,7 +468,7 @@ function handleActionForFeedItem(item: FeedItem) {
             <button
               v-if="savedDocIds.has(item.doc_id)"
               @click="emit('open-saved-reader', item.doc_id)"
-              class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm transition"
+              class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm transition whitespace-nowrap"
             >
               <BookOpen class="w-3.5 h-3.5" />
               <span>打开伴读</span>
@@ -474,8 +476,9 @@ function handleActionForFeedItem(item: FeedItem) {
             <button
               v-else
               @click="handleActionForFeedItem(item)"
-              class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm shadow-blue-500/20 transition"
+              class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm shadow-blue-500/20 transition whitespace-nowrap"
             >
+
               <FileUp class="w-3.5 h-3.5" />
               <span>导入全文制作</span>
             </button>
