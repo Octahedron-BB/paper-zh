@@ -55,10 +55,13 @@ const currentStageIdx = computed(() => {
 })
 
 async function startPipeline() {
-  if (!settingsState.apiKey && settingsState.llmProvider !== 'custom') {
-    alert(`请先在设置中填写 ${settingsState.llmProvider.toUpperCase()} API Key`)
+  const provider = settingsState.llmProvider
+  const activeKey = (settingsState.apiKeys?.[provider] || settingsState.apiKey || '').trim()
+  if (!activeKey && provider !== 'gemini' && provider !== 'custom') {
+    alert(`请先在设置中填写 ${provider.toUpperCase()} API Key`)
     return
   }
+
 
   isRunning.value = true
   generatedHtml.value = ''

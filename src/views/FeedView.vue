@@ -100,10 +100,13 @@ async function handleGenerateDigest(item: FeedItem) {
 }
 
 async function handleBatchDigest() {
-  if (!settingsState.apiKey) {
-    alert('请先在顶部右侧「设置」中配置 LLM API 密钥，即可批量生成所有文献的精准中文导读！')
+  const provider = settingsState.llmProvider
+  const activeKey = (settingsState.apiKeys?.[provider] || settingsState.apiKey || '').trim()
+  if (!activeKey && provider !== 'gemini' && provider !== 'custom') {
+    alert(`请先在顶部右侧「设置」中配置 ${provider.toUpperCase()} API 密钥，即可批量生成所有文献的精准中文导读！`)
     return
   }
+
   isBatchDigesting.value = true
   try {
     for (const item of filteredItems.value) {

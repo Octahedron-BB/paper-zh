@@ -37,11 +37,9 @@ export async function fetchAvailableModels(
         // ignore proxy network error and fallback below
       }
 
-      // 平滑回退：返回当前 Worker 免费层级支持的主流模型
+      // 平滑回退：返回当前 Worker 免费层级验证完全可用的模型
       return [
         { id: 'gemini-3.8-flash', name: 'gemini-3.8-flash (公共试用推荐 · 极速)' },
-        { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash (轻量稳定版)' },
-        { id: 'gemini-1.5-flash', name: 'gemini-1.5-flash (标准版)' },
       ]
     }
 
