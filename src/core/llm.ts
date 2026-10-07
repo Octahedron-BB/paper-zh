@@ -64,7 +64,7 @@ export class LlmClient {
     return { url, headers, model: reqModel }
   }
 
-  async chat(messages: ChatMessage[], temperature = 0.3, maxTokens = 4096): Promise<string> {
+  async chat(messages: ChatMessage[], temperature = 0.3, maxTokens = 8192): Promise<string> {
     const { url, headers, model } = this.getEndpointAndHeaders()
 
     const body = {

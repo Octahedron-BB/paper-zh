@@ -26,9 +26,10 @@ export const DEFAULT_GLOSSARY_TERMS: Term[] = [
   { term: 'visceral hypersensitivity', zh: '内脏高敏感性', mode: 'hard_replace' },
   { term: 'type 2 diabetes', zh: '2型糖尿病', mode: 'hard_replace' },
   { term: 'insulin resistance', zh: '胰岛素抵抗', mode: 'hard_replace' },
-  { term: 'beta-cell', zh: 'β细胞', mode: 'hard_replace' },
   { term: 'MASH', zh: '代谢功能障碍相关脂肪性肝炎', mode: 'hard_replace' },
   { term: 'fibrosis', zh: '纤维化', mode: 'hard_replace' },
+  { term: 'reassurance', zh: '消除疑虑与病情安抚', mode: 'hard_replace', aliases: ['消除疑虑', '心理安抚', '安慰', '安抚'] },
+  { term: 'multi-omics', zh: '多组学', mode: 'hard_replace' },
 ]
 
 function escapeRegExp(s: string): string {

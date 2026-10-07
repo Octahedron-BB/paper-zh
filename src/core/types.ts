@@ -15,6 +15,8 @@ export interface Segment {
   indented?: boolean
   col?: number
   in_box?: boolean
+  is_figure?: boolean
+  fig_label?: string
 }
 
 export interface Section {

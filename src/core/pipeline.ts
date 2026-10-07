@@ -3,7 +3,7 @@ import { LlmClient } from './llm'
 import { extractDocAbbreviations } from './abbrev'
 import { matchGlossaryTerms, renderPromptBlock, applyHardReplace } from './glossary'
 import { cleanForTts } from './polyphone'
-import { TRANSLATE_SYSTEM, SCRIPT_SYSTEM } from './prompts'
+import { TRANSLATE_SYSTEM, SCRIPT_SYSTEM, getScriptUserPrompt } from './prompts'
 import { synthesizeEdgeTts } from './edgeTts'
 import { synthesizeSiliconFlowTts } from './siliconflowTts'
 import { generateReaderHtml } from './readerBuilder'
@@ -304,8 +304,11 @@ export async function runDocumentPipeline(
       await runConcurrent(segsNeedingScript, 4, async (seg) => {
         const segIdx = doc.segments.findIndex((s) => s.sid === seg.sid)
         const zh = translations[seg.sid] || ''
+        const terms = matchGlossaryTerms(seg.src_text)
+        const hints = renderPromptBlock(terms)
 
-        const userPrompt = `【章节】${seg.sec_heading}\n【段落序号】${segIdx + 1}/${totalSegs}\n【中文初译】\n${zh}\n\n【英文原文参考】\n${seg.src_text}`
+        const sectionHeading = seg.is_figure && seg.fig_label ? `${seg.sec_heading} (${seg.fig_label})` : seg.sec_heading
+        const userPrompt = getScriptUserPrompt(zh, sectionHeading, hints, segIdx >= 0 ? segIdx : 0, totalSegs)
 
         try {
           const rawScript = await llm.chat(

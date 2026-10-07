@@ -18,6 +18,24 @@ function splitSentences(text: string): string[] {
   return matches && matches.length > 0 ? matches : [text]
 }
 
+function splitEnglishSentences(text: string): string[] {
+  if (!text) return []
+  // 保护常见缩写（如 Fig., Ref., e.g., i.e., et al., 浮点数等）
+  const protectedText = text
+    .replace(/\b(Fig|Figure|Ref|ref|e\.g|i\.e|et al|vs|dr|mr|mrs|prof)\./gi, (m) => m.replace('.', '__DOT__'))
+    .replace(/(\d+)\.(\d+)/g, '$1__DOT__$2')
+  
+  const parts = protectedText.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g)
+  if (!parts || parts.length === 0) return [text]
+  return parts.map(p => p.replace(/__DOT__/g, '.').trim()).filter(Boolean)
+}
+
+function formatCitationSuperscripts(text: string): string {
+  if (!text) return ''
+  // 匹配 [1], [1, 2], [1-3], [1–3], [ref. 61], [61] 等参考文献标记并转为上标
+  return text.replace(/\[((?:ref\.\s*)?\d+(?:[,\s\-–—\d]*)|\w+)\]/g, '<sup class="cite-sup">[$1]</sup>')
+}
+
 export function generateReaderHtml(
   doc: Document,
   translations: Record<string, string>,
@@ -35,11 +53,15 @@ export function generateReaderHtml(
   const tocBlocks: string[] = []
   const seenSections = new Set<string>()
 
-  // 建立 source text map
-  const sourceMap: Record<string, string> = {}
+  // 建立 source text 及 metadata map
+  const segMetaMap: Record<string, { src_text: string; is_figure?: boolean; fig_label?: string }> = {}
   for (const sec of doc.sections) {
     for (const seg of sec.segments) {
-      sourceMap[seg.sid] = seg.src_text
+      segMetaMap[seg.sid] = {
+        src_text: seg.src_text,
+        is_figure: seg.is_figure,
+        fig_label: seg.fig_label
+      }
     }
   }
 
@@ -48,6 +70,8 @@ export function generateReaderHtml(
     sid: seg.sid,
     sec_path: seg.sec_path,
     sec_heading: seg.sec_heading,
+    is_figure: seg.is_figure,
+    fig_label: seg.fig_label,
     start_sec: idx * 6,
     end_sec: (idx + 1) * 6,
     duration_sec: 6,
@@ -75,14 +99,18 @@ export function generateReaderHtml(
 
     const zhTrans = translations[sid] || item.script || ''
     const zhScript = scripts[sid] || item.script || ''
-    const enSource = sourceMap[sid] || ''
+    const meta = segMetaMap[sid] || {}
+    const enSource = meta.src_text || (item as any).src_text || ''
+    const isFigure = !!(meta.is_figure || (item as any).is_figure)
+    const figLabel = meta.fig_label || (item as any).fig_label || '图释 (Figure)'
     const safeSidId = sid.replace(/[^a-zA-Z0-9_-]/g, '_')
 
-    // 切分句级 span，支持全部视图（中英对照/口语讲稿/译文）下的卡拉OK高亮与“点哪读哪”
+    // 切分句级 span，支持全部视图（中英对照/口语讲稿/忠实译文）下的卡拉OK高亮与“点哪读哪”
     const transSentences = splitSentences(zhTrans)
     const scriptSentences = item.sentences && item.sentences.length > 0
       ? item.sentences
       : splitSentences(zhScript).map((st: string) => ({ text: st }))
+    const enSentences = splitEnglishSentences(enSource)
 
     const zhTransHtml = transSentences.map((st: string, sIdx: number) => {
       let sStart: number | undefined
@@ -99,7 +127,8 @@ export function generateReaderHtml(
         sEnd = segStart + segDur * frac
       }
       const startAttr = sStart !== undefined ? `data-start="${sStart.toFixed(2)}" data-end="${(sEnd !== undefined ? sEnd : sStart + 3).toFixed(2)}"` : ''
-      return `<span class="sentence-span trans-span" data-seg="${i}" data-sen="${sIdx}" ${startAttr} onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}${sStart !== undefined ? `, ${sStart.toFixed(2)}` : ''});">${st}</span>`
+      const contentWithSup = formatCitationSuperscripts(st)
+      return `<span class="sentence-span trans-span" data-seg="${i}" data-sen="${sIdx}" ${startAttr} onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}${sStart !== undefined ? `, ${sStart.toFixed(2)}` : ''});">${contentWithSup}</span>`
     }).join('')
 
     const zhScriptHtml = scriptSentences.map((s: any, sIdx: number) => {
@@ -107,18 +136,37 @@ export function generateReaderHtml(
       const sStart = s.start_sec !== undefined ? s.start_sec : undefined
       const sEnd = s.end_sec !== undefined ? s.end_sec : undefined
       const startAttr = sStart !== undefined ? `data-start="${sStart.toFixed(2)}" data-end="${(sEnd !== undefined ? sEnd : sStart + 3).toFixed(2)}"` : ''
-      return `<span class="sentence-span script-span" data-seg="${i}" data-sen="${sIdx}" ${startAttr} onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}${sStart !== undefined ? `, ${sStart.toFixed(2)}` : ''});">${sText}</span>`
+      const contentWithSup = formatCitationSuperscripts(sText)
+      return `<span class="sentence-span script-span" data-seg="${i}" data-sen="${sIdx}" ${startAttr} onclick="event.stopPropagation(); jumpToSentence(${i}, ${sIdx}${sStart !== undefined ? `, ${sStart.toFixed(2)}` : ''});">${contentWithSup}</span>`
+    }).join('')
+
+    const enSourceHtml = enSentences.map((stEn: string, eIdx: number) => {
+      let corrSIdx = eIdx
+      if (transSentences.length > 0) {
+        if (enSentences.length === transSentences.length) {
+          corrSIdx = eIdx
+        } else {
+          corrSIdx = Math.min(Math.floor((eIdx / enSentences.length) * transSentences.length), transSentences.length - 1)
+        }
+      }
+      const contentWithSup = formatCitationSuperscripts(stEn)
+      return `<span class="sentence-span en-span" data-seg="${i}" data-sen="${corrSIdx}" onclick="event.stopPropagation(); jumpToSentence(${i}, ${corrSIdx});">${contentWithSup} </span>`
     }).join('')
 
     contentBlocks.push(`
       <div class="segment-card" id="seg-${safeSidId}" data-seg-idx="${i}" onclick="jumpToSegment(${startSec}, ${i})">
         <div class="card-meta">
-          <span class="play-tag">▶ ${formatDurationStr(startSec)}</span>
+          <div class="card-meta-left">
+            <span class="play-tag">▶ ${formatDurationStr(startSec)}</span>
+            ${isFigure ? `<span class="figure-tag">🖼️ ${figLabel}</span>` : ''}
+          </div>
           <span>${hasAudio ? `时长 ${(item.duration_sec || 0).toFixed(1)}s` : `第 ${i + 1} 段`}</span>
         </div>
-        <div class="text-zh-trans"><span class="badge-tag">译文</span>${zhTransHtml}</div>
+        <div class="bilingual-body">
+          <div class="text-zh-trans"><span class="badge-tag">译文</span>${zhTransHtml}</div>
+          <div class="text-en-source"><span class="badge-tag">原文</span>${enSourceHtml}</div>
+        </div>
         <div class="text-zh-script"><span class="badge-tag">讲稿</span>${zhScriptHtml}</div>
-        <div class="text-en-source"><span class="badge-tag">原文</span>${enSource}</div>
       </div>
     `)
   }
@@ -297,6 +345,12 @@ export function generateReaderHtml(
       margin-bottom: 12px;
       user-select: none;
     }
+    .card-meta-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
     .card-meta .play-tag {
       color: var(--primary);
       font-weight: 600;
@@ -307,6 +361,29 @@ export function generateReaderHtml(
       padding: 2px 8px;
       border-radius: 6px;
       border: 1px solid var(--border);
+    }
+    .figure-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+      padding: 1px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.74rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      .figure-tag {
+        background: #451a03;
+        color: #fde68a;
+        border-color: #78350f;
+      }
+    }
+
+    .bilingual-body {
+      display: block;
     }
 
     .text-zh-trans, .text-zh-script {
@@ -330,7 +407,19 @@ export function generateReaderHtml(
       opacity: 0.85;
     }
 
-    /* Sentence-level Real-time Highlight (卡拉OK逐句高亮) */
+    /* Citation Superscripts */
+    .cite-sup {
+      font-size: 0.75em;
+      line-height: 0;
+      position: relative;
+      vertical-align: super;
+      color: var(--primary);
+      font-weight: 600;
+      margin: 0 1.5px;
+      cursor: default;
+    }
+
+    /* Sentence-level Real-time Highlight (卡拉OK逐句高亮与双向联动) */
     .sentence-span {
       display: inline;
       padding: 1px 2px;
@@ -339,9 +428,10 @@ export function generateReaderHtml(
       transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
       cursor: pointer;
     }
-    .sentence-span:hover {
+    .sentence-span:hover, .sentence-span.hover-sync {
       background: rgba(37, 99, 235, 0.12);
       color: var(--primary);
+      border-radius: 4px;
     }
     .sentence-span.active-sentence {
       background: var(--primary);
@@ -364,17 +454,18 @@ export function generateReaderHtml(
     }
 
     /* View Mode Toggles */
+    .view-interleave .bilingual-body { display: block; }
     .view-interleave .text-zh-trans { display: block; }
     .view-interleave .text-en-source { display: block; }
     .view-interleave .text-zh-script { display: none; }
 
+    .view-script .bilingual-body { display: none; }
     .view-script .text-zh-script { display: block; }
-    .view-script .text-zh-trans { display: none; }
-    .view-script .text-en-source { display: none; }
 
+    .view-trans .bilingual-body { display: block; }
     .view-trans .text-zh-trans { display: block; }
-    .view-trans .text-zh-script { display: none; }
     .view-trans .text-en-source { display: none; }
+    .view-trans .text-zh-script { display: none; }
 
     /* Modern Floating Player Bar: ALWAYS VISIBLE */
     .player-dock {
@@ -534,6 +625,28 @@ export function generateReaderHtml(
       .track-meta { grid-area: meta; }
       .player-tools { grid-area: tools; }
       .progress-row { grid-area: prog; }
+    }
+    /* 电脑端左右对照 (>= 900px) */
+    @media (min-width: 900px) {
+      .container {
+        max-width: 1160px;
+      }
+      .player-pill {
+        max-width: 1160px;
+      }
+      .view-interleave .bilingual-body {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+        align-items: start;
+      }
+      .view-interleave .text-en-source {
+        border-top: none;
+        border-left: 1px dashed var(--border);
+        padding-top: 0;
+        margin-top: 0;
+        padding-left: 20px;
+      }
     }
 
     /* Sidebar */
@@ -1027,16 +1140,35 @@ export function generateReaderHtml(
               break;
             }
           }
-          document.querySelectorAll('.sentence-span.active-sentence').forEach(el => {
-            if (el !== activeSpan) el.classList.remove('active-sentence');
-          });
-          if (activeSpan && !activeSpan.classList.contains('active-sentence')) {
-            activeSpan.classList.add('active-sentence');
+          if (activeSpan) {
+            const segIdx = parseInt(activeSpan.dataset.seg, 10);
+            const senIdx = parseInt(activeSpan.dataset.sen, 10);
+            if (currentSentenceIndex !== senIdx || currentSegmentIndex !== segIdx) {
+              highlightSentence(segIdx, senIdx);
+            }
           }
         }
         localStorage.setItem('paper_progress_${doc.doc_id}', cur);
       });
     }
+
+    // 双向联动高亮：鼠标悬停句子，同步高亮对应语言的句子
+    document.addEventListener('mouseover', (e) => {
+      const span = e.target.closest('.sentence-span');
+      if (span) {
+        const seg = span.getAttribute('data-seg');
+        const sen = span.getAttribute('data-sen');
+        if (seg !== null && sen !== null) {
+          document.querySelectorAll('.sentence-span[data-seg="' + seg + '"][data-sen="' + sen + '"]').forEach(el => el.classList.add('hover-sync'));
+        }
+      }
+    });
+    document.addEventListener('mouseout', (e) => {
+      const span = e.target.closest('.sentence-span');
+      if (span) {
+        document.querySelectorAll('.sentence-span.hover-sync').forEach(el => el.classList.remove('hover-sync'));
+      }
+    });
 
     // 快捷键支持 (空格键播放/暂停)
     window.addEventListener('keydown', (e) => {

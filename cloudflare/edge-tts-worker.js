@@ -192,7 +192,7 @@ export default {
               model: targetModel,
               messages: body.messages,
               temperature: body.temperature ?? 0.3,
-              max_tokens: body.max_tokens ?? 2048,
+              max_tokens: body.max_tokens ?? 8192,
             }),
           }
         )
