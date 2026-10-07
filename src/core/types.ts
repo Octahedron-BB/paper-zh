@@ -48,10 +48,14 @@ export interface Term {
 
 export type TtsProvider = 'edge-tts' | 'web-speech' | 'openai' | 'cosyvoice' | 'siliconflow' | 'none'
 
+export type LlmProvider = 'deepseek' | 'openai' | 'gemini' | 'custom'
+
 export interface Settings {
-  llmProvider: 'deepseek' | 'openai' | 'gemini' | 'custom'
+  llmProvider: LlmProvider
   apiKey: string
+  apiKeys: Record<LlmProvider, string>
   model: string
+  models: Record<LlmProvider, string>
   customBaseUrl?: string
   enableTts: boolean
   ttsProvider: TtsProvider
@@ -60,6 +64,7 @@ export interface Settings {
   academicProxyUrl?: string
   academicProxyCookie?: string
   edgeTtsProxyUrl?: string
+  geminiProxyUrl?: string
   siliconflowApiKey?: string
   siliconflowModel?: string
   // 预留其他 TTS 供应商配置

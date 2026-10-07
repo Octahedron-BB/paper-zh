@@ -36,6 +36,18 @@
 
 ---
 
+### 第四步（可选）：配置 Gemini 免费额度共享（作为访客默认体验 Key）
+如果您希望为访问 GitHub Pages 的新用户提供默认的 Gemini 翻译体验，而又不暴露您的私有 API Key：
+1. 在 Cloudflare Worker 的控制台页面，切换到 **Settings (设置) -> Variables and Secrets (变量与机密)**。
+2. 点击 **Add** 添加变量：
+   - Variable name: `GEMINI_API_KEY`
+   - Value: 填入您从 Google AI Studio 申请的 Gemini API Key (以 `AIzaSy...` 开头)
+   - 类型可选择 Encrypt (加密存储)
+3. 点击 **Deploy**。
+4. 现在，当访客在前端没有填写任何 Key 时，系统会自动通过您的 Worker 安全代理调用 Google Gemini 接口，且由于前端看不到 Key、Worker 限制了 Origin 白名单与单次文本长度，Key 不会被窃取或滥用。
+
+---
+
 ## 🖥️ 备选方案：本地或私有服务器部署 (Node.js)
 
 如果你希望在本地常驻或自己的 VPS 上运行反代服务：
@@ -47,3 +59,4 @@ npm run server
 
 服务就绪后，在伴读网页设置中填入你的服务器地址即可：
 `http://localhost:3000/api/edge-tts` 或 `http://your-vps-ip:3000/api/edge-tts`
+

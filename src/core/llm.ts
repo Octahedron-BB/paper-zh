@@ -17,36 +17,47 @@ export class LlmClient {
   }
 
   private getEndpointAndHeaders(): { url: string; headers: Record<string, string>; model: string } {
-    const { llmProvider, apiKey, model, customBaseUrl } = this.settings
+    const { llmProvider, apiKey, apiKeys, model, models, customBaseUrl, geminiProxyUrl } = this.settings
 
-    if (!apiKey && llmProvider !== 'custom') {
-      throw new Error(`请先在设置中填写 ${llmProvider.toUpperCase()} API Key`)
-    }
+    // 获取当前服务商独立保存的 Key 与模型
+    const activeKey = (apiKeys?.[llmProvider] || apiKey || '').trim()
+    const activeModel = (models?.[llmProvider] || model || '').trim()
 
     let url = ''
-    let reqModel = model || 'deepseek-chat'
+    let reqModel = activeModel
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     }
 
     if (llmProvider === 'deepseek') {
+      if (!activeKey) {
+        throw new Error('请先在设置中填写 DeepSeek API Key')
+      }
       url = 'https://api.deepseek.com/chat/completions'
-      headers['Authorization'] = `Bearer ${apiKey}`
-      reqModel = model || 'deepseek-chat'
+      headers['Authorization'] = `Bearer ${activeKey}`
+      reqModel = activeModel || 'deepseek-chat'
     } else if (llmProvider === 'openai') {
+      if (!activeKey) {
+        throw new Error('请先在设置中填写 OpenAI API Key')
+      }
       url = 'https://api.openai.com/v1/chat/completions'
-      headers['Authorization'] = `Bearer ${apiKey}`
-      reqModel = model || 'gpt-4o-mini'
+      headers['Authorization'] = `Bearer ${activeKey}`
+      reqModel = activeModel || 'gpt-4o-mini'
     } else if (llmProvider === 'gemini') {
-      // Gemini's OpenAI-compatible endpoint
-      url = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`
-      headers['Authorization'] = `Bearer ${apiKey}`
-      reqModel = model || 'gemini-1.5-flash'
+      reqModel = activeModel || 'gemini-1.5-flash'
+      if (activeKey) {
+        // 用户填写了私有 Key：直接调用 Google AI Studio 官方端点
+        url = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
+        headers['Authorization'] = `Bearer ${activeKey}`
+      } else {
+        // 用户未配置 Key：无缝切换为内置公共免费试用代理
+        url = geminiProxyUrl || 'https://edge-tts-proxy.ryoctahedron1998.workers.dev/api/gemini'
+      }
     } else if (llmProvider === 'custom') {
       const base = (customBaseUrl || '').replace(/\/+$/, '')
       url = base.endsWith('/chat/completions') ? base : `${base}/chat/completions`
-      if (apiKey) {
-        headers['Authorization'] = `Bearer ${apiKey}`
+      if (activeKey) {
+        headers['Authorization'] = `Bearer ${activeKey}`
       }
     }
 

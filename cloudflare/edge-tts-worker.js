@@ -107,9 +107,8 @@ export default {
       return new Response(
         JSON.stringify({
           status: 'ok',
-          service: 'paper-zh Edge-TTS Cloudflare Proxy (Security Protected)',
-          endpoint: '/api/edge-tts',
-          usage: 'POST /api/edge-tts with { text, voice, rate }',
+          service: 'paper-zh Multi-Service Cloudflare Proxy (Edge-TTS & Gemini AI)',
+          endpoints: ['/api/edge-tts', '/api/gemini'],
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -117,6 +116,72 @@ export default {
       )
     }
 
+    // --- Gemini LLM 免费试用安全代理 ---
+    if (request.method === 'POST' && url.pathname.endsWith('/api/gemini')) {
+      try {
+        const geminiApiKey = env?.GEMINI_API_KEY || ''
+        if (!geminiApiKey) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                message: 'Cloudflare Worker 尚未绑定 GEMINI_API_KEY 环境变量，请在 Cloudflare 仪表盘设置环境变量，或在网页设置中填入您自己的 API Key。',
+                type: 'server_error',
+              },
+            }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        const body = await request.json()
+        const messages = body.messages || []
+        const totalChars = messages.reduce((acc, m) => acc + (m.content ? m.content.length : 0), 0)
+
+        // 防盗刷长度保护：单次伴读翻译/改写控制在 6000 字符以内
+        if (totalChars > 6000) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                message: '请求文本过长（超过 6000 字符）。为防止公共试用额度被恶意消耗，长篇翻译请在设置中配置您自己的 API Key。',
+                type: 'rate_limit_error',
+              },
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // 转发到 Google 官方兼容 OpenAI 协议的端点
+        const targetModel = body.model || 'gemini-1.5-flash'
+        const googleResp = await fetch(
+          'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${geminiApiKey}`,
+            },
+            body: JSON.stringify({
+              model: targetModel,
+              messages: body.messages,
+              temperature: body.temperature ?? 0.3,
+              max_tokens: body.max_tokens ?? 2048,
+            }),
+          }
+        )
+
+        const respData = await googleResp.text()
+        return new Response(respData, {
+          status: googleResp.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      } catch (err) {
+        return new Response(
+          JSON.stringify({ error: { message: err.message || String(err), type: 'proxy_error' } }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
+    // --- Edge-TTS 语音合成代理 ---
     if (request.method === 'POST') {
       try {
         const body = await request.json()
