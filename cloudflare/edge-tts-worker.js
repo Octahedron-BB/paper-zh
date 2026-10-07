@@ -225,10 +225,10 @@ export default {
           })
         }
 
-        // 3. 防刷熔断：学术伴读单段通常 < 300 字，超过 500 字直接拦截
-        if (text.length > 500) {
+        // 3. 防刷熔断：学术伴读单段通常在 200~800 字，个别超长引言/摘要可达 1000~1500 字，设置 3000 字阈值兼顾防刷与长段落朗读
+        if (text.length > 3000) {
           return new Response(
-            JSON.stringify({ error: 'Text too long: 单次朗读不得超过 500 字（防盗刷保护）' }),
+            JSON.stringify({ error: 'Text too long: 单次朗读不得超过 3000 字（防盗刷保护）' }),
             {
               status: 400,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' },
