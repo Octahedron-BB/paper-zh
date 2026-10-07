@@ -59,6 +59,7 @@ export interface Settings {
   ttsRate: string
   academicProxyUrl?: string
   academicProxyCookie?: string
+  edgeTtsProxyUrl?: string
   // 预留其他 TTS 供应商配置
   customTtsApiKey?: string
   customTtsModel?: string

@@ -296,7 +296,8 @@ export async function runDocumentPipeline(
             res = await synthesizeEdgeTts(
               scriptText,
               settings.ttsVoice,
-              settings.ttsRate
+              settings.ttsRate,
+              settings.edgeTtsProxyUrl
             )
             if (res && res.audioBlob && res.audioBlob.size > 0) break
           } catch (e) {

@@ -14,6 +14,7 @@ const defaultSettings: Settings = {
   ttsRate: '+0%',
   academicProxyUrl: '',
   academicProxyCookie: '',
+  edgeTtsProxyUrl: '',
   customTtsApiKey: '',
   customTtsModel: '',
 }

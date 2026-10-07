@@ -40,7 +40,8 @@ function escapeXml(unsafe: string): string {
 export async function synthesizeEdgeTts(
   text: string,
   voice = 'zh-TW-HsiaoChenNeural',
-  rate = '+0%'
+  rate = '+0%',
+  proxyUrl?: string
 ): Promise<TtsResult> {
   if (!text || !text.trim()) {
     return {
@@ -51,10 +52,12 @@ export async function synthesizeEdgeTts(
     }
   }
 
-  // 1. 优先调用后端/开发服务器 Edge-TTS 代理 (采用 Node.js 最新 Sec-MS-GEC 签名，带重试保护)
+  const endpoint = proxyUrl && proxyUrl.trim() ? proxyUrl.trim() : '/api/edge-tts'
+
+  // 1. 优先调用后端/开发服务器或自定义 Edge-TTS 代理 (带重试保护)
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const res = await fetch('/api/edge-tts', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, voice, rate }),
@@ -220,7 +223,11 @@ export async function synthesizeEdgeTts(
       if (!completed) {
         clearTimeout(timeoutTimer)
         completed = true
-        reject(new Error(`Edge-TTS WebSocket 错误: 网络中断或服务不可达`))
+        reject(
+          new Error(
+            'Edge-TTS 连接被拒绝 (403 Forbidden)：纯静态网页因安全限制无法直连微软云端。请在本地运行 (npm run dev) 或配置代理地址。'
+          )
+        )
       }
     }
 

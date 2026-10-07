@@ -165,7 +165,12 @@ async function testVoicePlayback() {
   // 1. 如果当前选定的是 Edge-TTS：真正调用云端 Edge-TTS 合成并播放真实 MP3 语音！
   if (settingsState.ttsProvider === 'edge-tts') {
     try {
-      const res = await synthesizeEdgeTts(testText, settingsState.ttsVoice, settingsState.ttsRate)
+      const res = await synthesizeEdgeTts(
+        testText,
+        settingsState.ttsVoice,
+        settingsState.ttsRate,
+        settingsState.edgeTtsProxyUrl
+      )
       if (res.audioBlob && res.audioBlob.size > 0) {
         const url = URL.createObjectURL(res.audioBlob)
         const audio = new Audio(url)
@@ -183,76 +188,91 @@ async function testVoicePlayback() {
         await audio.play()
         return
       }
+      throw new Error('未接收到有效的 Edge-TTS 音频数据')
     } catch (err: any) {
-      console.warn('Edge-TTS 试听请求遇阻，回退至系统原生语音:', err)
+      isTestingVoice.value = false
+      alert(
+        `Edge-TTS 试听受阻：\n${err.message || '网络连接失败'}\n\n` +
+        `【原因与排查】\n` +
+        `由于 GitHub Pages 为纯静态托管，微软安全策略拒绝了浏览器网页的跨域直连 (403 Forbidden)。\n\n` +
+        `【解决方案】\n` +
+        `1. 本地使用：在电脑终端运行 npm run dev 打开本地页面，自带 Node.js 代理，100% 畅听正版晓臻！\n` +
+        `2. 静态页面：请在下方配置 Edge-TTS 代理地址（如免费 Cloudflare Worker 代理）；\n` +
+        `3. 免代理方案：可将伴读引擎切换为『系统原生 Web Speech』。`
+      )
+      return
     }
   }
 
-  // 2. 浏览器原生 Web Speech API 试听
-  if (!('speechSynthesis' in window)) {
-    alert('当前浏览器不支持语音合成 API')
-    isTestingVoice.value = false
+  // 2. 浏览器原生 Web Speech API 试听 (仅在用户主动选定系统原生引擎时触发，严禁静默回退)
+  if (settingsState.ttsProvider === 'web-speech') {
+    if (!('speechSynthesis' in window)) {
+      alert('当前浏览器不支持 Web Speech API')
+      isTestingVoice.value = false
+      return
+    }
+
+    const u = new SpeechSynthesisUtterance(testText)
+    const sysVoices = window.speechSynthesis.getVoices()
+    const target = settingsState.ttsVoice
+
+    let matched: SpeechSynthesisVoice | undefined = undefined
+    // 完全精确匹配
+    matched = sysVoices.find((v) => v.name === target || v.voiceURI === target)
+    if (!matched) matched = sysVoices.find((v) => v.name.includes(target) || target.includes(v.name))
+    if (!matched && (target.includes('TW') || target.includes('HsiaoChen') || target.includes('台湾'))) {
+      matched = sysVoices.find((v) => {
+        const n = v.name.toLowerCase()
+        const l = v.lang.replace('_', '-').toLowerCase()
+        return l.includes('zh-tw') || l.includes('zh-hk') || n.includes('mei-jia') || n.includes('hanhan') || n.includes('國語')
+      })
+    }
+    if (!matched && (target.includes('Yunxi') || target.includes('Yunjian') || target.includes('男'))) {
+      matched = sysVoices.find((v) => {
+        const n = v.name.toLowerCase()
+        const l = v.lang.toLowerCase()
+        return l.includes('zh') && (n.includes('kangkang') || n.includes('danny') || n.includes('male') || n.includes('男'))
+      })
+    }
+    if (!matched && (target.includes('HK') || target.includes('HiuGaai') || target.includes('粤'))) {
+      matched = sysVoices.find((v) => {
+        const n = v.name.toLowerCase()
+        const l = v.lang.replace('_', '-').toLowerCase()
+        return l.includes('zh-hk') || n.includes('sin-ji') || n.includes('粵語') || n.includes('cantonese')
+      })
+    }
+    if (!matched && (target.includes('Xiaoxiao') || target.includes('CN') || target.includes('女'))) {
+      matched = sysVoices.find((v) => {
+        const n = v.name.toLowerCase()
+        const l = v.lang.replace('_', '-').toLowerCase()
+        return l.includes('zh') && (n.includes('ting-ting') || n.includes('yaoyao') || n.includes('female') || n.includes('女'))
+      })
+    }
+    if (!matched) {
+      matched = sysVoices.find((v) => v.lang.toLowerCase().includes('zh'))
+    }
+
+    if (matched) {
+      u.voice = matched
+      u.lang = matched.lang
+    }
+
+    const rateNum = parseFloat(settingsState.ttsRate.replace('%', '')) || 0
+    u.rate = Math.max(0.5, Math.min(2.0, 1.0 + rateNum / 100))
+
+    u.onend = () => {
+      isTestingVoice.value = false
+    }
+    u.onerror = (e) => {
+      isTestingVoice.value = false
+      console.error('Web Speech 试听失败:', e)
+    }
+
+    window.speechSynthesis.speak(u)
     return
   }
 
-  const u = new SpeechSynthesisUtterance(testText)
-  const sysVoices = window.speechSynthesis.getVoices()
-  const target = settingsState.ttsVoice
-
-  let matched: SpeechSynthesisVoice | undefined = undefined
-  // 完全精确匹配
-  matched = sysVoices.find((v) => v.name === target || v.voiceURI === target)
-  if (!matched) matched = sysVoices.find((v) => v.name.includes(target) || target.includes(v.name))
-  if (!matched && (target.includes('TW') || target.includes('HsiaoChen') || target.includes('台湾'))) {
-    matched = sysVoices.find((v) => {
-      const n = v.name.toLowerCase()
-      const l = v.lang.replace('_', '-').toLowerCase()
-      return l.includes('zh-tw') || l.includes('zh-hk') || n.includes('mei-jia') || n.includes('hanhan') || n.includes('國語')
-    })
-  }
-  if (!matched && (target.includes('Yunxi') || target.includes('Yunjian') || target.includes('男'))) {
-    matched = sysVoices.find((v) => {
-      const n = v.name.toLowerCase()
-      const l = v.lang.toLowerCase()
-      return l.includes('zh') && (n.includes('kangkang') || n.includes('danny') || n.includes('male') || n.includes('男'))
-    })
-  }
-  if (!matched && (target.includes('HK') || target.includes('HiuGaai') || target.includes('粤'))) {
-    matched = sysVoices.find((v) => {
-      const n = v.name.toLowerCase()
-      const l = v.lang.replace('_', '-').toLowerCase()
-      return l.includes('zh-hk') || n.includes('sin-ji') || n.includes('粵語') || n.includes('cantonese')
-    })
-  }
-  if (!matched && (target.includes('Xiaoxiao') || target.includes('CN') || target.includes('女'))) {
-    matched = sysVoices.find((v) => {
-      const n = v.name.toLowerCase()
-      const l = v.lang.replace('_', '-').toLowerCase()
-      return l.startsWith('zh-cn') && (n.includes('ting-ting') || n.includes('huihui') || n.includes('yaoyao') || n.includes('普通话'))
-    })
-  }
-  if (!matched) {
-    matched = sysVoices.find((v) => v.lang.toLowerCase().includes('zh') || v.lang.toLowerCase().includes('cmn'))
-  }
-
-  if (matched) {
-    u.voice = matched
-    u.lang = matched.lang
-  } else {
-    u.lang = target.includes('TW') ? 'zh-TW' : 'zh-CN'
-  }
-
-  const rateNum = 1.0 + parseFloat(settingsState.ttsRate.replace('%', '')) / 100.0
-  u.rate = Math.max(0.5, Math.min(2.0, rateNum))
-
-  u.onend = () => {
-    isTestingVoice.value = false
-  }
-  u.onerror = () => {
-    isTestingVoice.value = false
-  }
-
-  window.speechSynthesis.speak(u)
+  isTestingVoice.value = false
 }
 
 function stopVoicePlayback() {
@@ -470,6 +490,30 @@ function handleClearStorage() {
                   {{ r.label }}
                 </button>
               </div>
+            </div>
+
+            <!-- Edge-TTS 代理配置（解决静态部署跨域拦截） -->
+            <div
+              v-if="settingsState.ttsProvider === 'edge-tts'"
+              class="pt-3 border-t border-slate-200/60 dark:border-slate-700/60 space-y-2"
+            >
+              <div class="flex items-center justify-between">
+                <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                  Edge-TTS 代理 URL (可选)
+                </label>
+                <span class="text-[10px] text-slate-400">本地开发留空即可</span>
+              </div>
+              <input
+                type="text"
+                v-model="settingsState.edgeTtsProxyUrl"
+                placeholder="留空默认本地 /api/edge-tts；静态网页可填反代如 https://xxx.workers.dev"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-xs"
+              />
+              <p class="text-[11px] text-slate-400 leading-relaxed">
+                💡 <b>运行环境说明</b>：<br />
+                • <b>本地开发</b>：终端运行 <code class="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200">npm run dev</code>，自带 Node.js 代理，开箱即用 100% 畅听正版晓臻；<br />
+                • <b>GitHub Pages 静态页</b>：受微软安全风控限制，浏览器无法直连；需配置中转代理（如免费 Cloudflare Worker）方可实时调用。
+              </p>
             </div>
           </div>
         </section>
