@@ -15,8 +15,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import re
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -26,9 +30,79 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from src.docs import resolve_doc_id  # noqa: E402
 from src.polyphone import load_polyphone_rules, apply_polyphone_rules  # noqa: E402
+from src.providers import load_env  # noqa: E402
 
-DEFAULT_VOICE = "zh-TW-HsiaoChenNeural"
+DEFAULT_EDGE_VOICE = "zh-TW-HsiaoChenNeural"
+DEFAULT_SILICONFLOW_VOICE = "FunAudioLLM/CosyVoice2-0.5B:alex"
+DEFAULT_SILICONFLOW_MODEL = "FunAudioLLM/CosyVoice2-0.5B"
+DEFAULT_VOICE = DEFAULT_EDGE_VOICE
 AUDIO_DIR = ROOT / "data" / "audio"
+
+
+def synthesize_siliconflow(
+    norm_text: str,
+    voice: str,
+    rate: str,
+    model: str = DEFAULT_SILICONFLOW_MODEL,
+    api_key: str | None = None,
+) -> bytes:
+    """调用硅基流动 CosyVoice 接口合成音频（零外部依赖，使用标准库 urllib）。"""
+    key = api_key or os.environ.get("SILICONFLOW_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError(
+            "缺少 SILICONFLOW_API_KEY。请在项目根目录 .env 中写入 SILICONFLOW_API_KEY=sk-xxxx，"
+            "或通过环境变量传入。"
+        )
+
+    speed = 1.0
+    if rate:
+        try:
+            r = float(rate.replace("%", "").strip())
+            speed = max(0.5, min(2.0, 1.0 + r / 100.0))
+        except ValueError:
+            speed = 1.0
+
+    url = "https://api.siliconflow.cn/v1/audio/speech"
+    payload = {
+        "model": model or DEFAULT_SILICONFLOW_MODEL,
+        "input": norm_text,
+        "voice": voice or DEFAULT_SILICONFLOW_VOICE,
+        "response_format": "mp3",
+        "sample_rate": 32000,
+        "speed": speed,
+        "gain": 0,
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "User-Agent": "paper-zh/1.0",
+        },
+        method="POST",
+    )
+
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            if e.code == 401:
+                raise RuntimeError(f"硅基流动 API Key 无效或未授权 (401): {err_body}") from e
+            if e.code == 402:
+                raise RuntimeError("硅基流动账户余额不足 (402): 请充值或领取赠送额度") from e
+            if attempt == 3:
+                raise RuntimeError(f"硅基流动请求失败 ({e.code}): {err_body}") from e
+            time.sleep(1.0 * attempt)
+        except Exception as e:
+            if attempt == 3:
+                raise RuntimeError(f"硅基流动连接失败: {e}") from e
+            time.sleep(1.0 * attempt)
+
+    raise RuntimeError("硅基流动合成重试耗尽")
 
 
 def _edge_tts():
@@ -101,6 +175,33 @@ def align_sentences_with_raw(raw_text: str, tts_sentences: list[dict[str, Any]])
     return tts_sentences
 
 
+def estimate_sentences_proportional(raw_text: str, total_duration: float) -> list[dict[str, Any]]:
+    """按中文标点将文本切句，并依字数比例估算时间戳（用于硅基流动等无逐字时间戳的 API）。"""
+    pattern = r'([^。！？；\n]+[。！？；\n]*)'
+    raw_splits = [s for s in re.findall(pattern, raw_text) if s.strip()]
+    if not raw_splits:
+        raw_splits = [raw_text] if raw_text.strip() else []
+    if not raw_splits:
+        return []
+
+    total_len = sum(len(s) for s in raw_splits) or 1
+    sentences: list[dict[str, Any]] = []
+    curr = 0.0
+    for i, s in enumerate(raw_splits):
+        if i == len(raw_splits) - 1:
+            dur = max(0.05, total_duration - curr)
+        else:
+            dur = max(0.05, total_duration * (len(s) / total_len))
+        sentences.append({
+            "text": s,
+            "start": round(curr, 3),
+            "end": round(curr + dur, 3),
+            "duration": round(dur, 3),
+        })
+        curr += dur
+    return sentences
+
+
 def format_lrc_time(seconds: float) -> str:
     """转换秒数为 LRC 标准格式 [mm:ss.xx]"""
     mins = int(seconds // 60)
@@ -149,9 +250,12 @@ async def synthesize_segment(
     pitch: str,
     out_mp3: Path,
     out_meta: Path,
+    provider: str = "edge-tts",
+    model: str = DEFAULT_SILICONFLOW_MODEL,
+    api_key: str | None = None,
     poly_rules: Sequence[tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """合成单段音频并提取句子级时间边界"""
+    """合成单段音频并提取句子级时间边界（支持 edge-tts 与 siliconflow）"""
     norm_text = normalize_script_for_tts(raw_text, poly_rules=poly_rules)
 
     if out_mp3.exists() and out_meta.exists():
@@ -162,6 +266,7 @@ async def synthesize_segment(
                 and cached_meta.get("voice") == voice
                 and cached_meta.get("rate") == rate
                 and cached_meta.get("pitch") == pitch
+                and cached_meta.get("provider", "edge-tts") == provider
             ):
                 return cached_meta
         except Exception:
@@ -170,31 +275,45 @@ async def synthesize_segment(
     out_mp3.parent.mkdir(parents=True, exist_ok=True)
     out_meta.parent.mkdir(parents=True, exist_ok=True)
 
-    communicate = _edge_tts().Communicate(norm_text, voice, rate=rate, pitch=pitch)
-    audio_data = bytearray()
-    raw_sentences = []
+    if provider == "siliconflow":
+        audio_data = await asyncio.to_thread(
+            synthesize_siliconflow,
+            norm_text,
+            voice,
+            rate,
+            model=model,
+            api_key=api_key,
+        )
+        out_mp3.write_bytes(audio_data)
+        exact_duration = get_mp3_duration(out_mp3)
+        sentences = estimate_sentences_proportional(raw_text, exact_duration)
+    else:
+        communicate = _edge_tts().Communicate(norm_text, voice, rate=rate, pitch=pitch)
+        audio_buf = bytearray()
+        raw_sentences = []
 
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio_data.extend(chunk["data"])
-        elif chunk["type"] == "SentenceBoundary":
-            offset_sec = chunk["offset"] / 10_000_000.0
-            duration_sec = chunk["duration"] / 10_000_000.0
-            raw_sentences.append({
-                "text": chunk["text"],
-                "start": round(offset_sec, 3),
-                "end": round(offset_sec + duration_sec, 3),
-                "duration": round(duration_sec, 3),
-            })
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_buf.extend(chunk["data"])
+            elif chunk["type"] == "SentenceBoundary":
+                offset_sec = chunk["offset"] / 10_000_000.0
+                duration_sec = chunk["duration"] / 10_000_000.0
+                raw_sentences.append({
+                    "text": chunk["text"],
+                    "start": round(offset_sec, 3),
+                    "end": round(offset_sec + duration_sec, 3),
+                    "duration": round(duration_sec, 3),
+                })
 
-    # 将返回的句子切片映射回未被同音字替换修改的原始文本
-    sentences = align_sentences_with_raw(raw_text, raw_sentences)
-
-    out_mp3.write_bytes(audio_data)
-    exact_duration = get_mp3_duration(out_mp3)
+        # 将返回的句子切片映射回未被同音字替换修改的原始文本
+        sentences = align_sentences_with_raw(raw_text, raw_sentences)
+        audio_data = bytes(audio_buf)
+        out_mp3.write_bytes(audio_data)
+        exact_duration = get_mp3_duration(out_mp3)
 
     meta = {
         "sid": sid,
+        "provider": provider,
         "voice": voice,
         "rate": rate,
         "pitch": pitch,
@@ -210,13 +329,31 @@ async def synthesize_segment(
 
 async def run_audio_pipeline(
     doc_id: str,
-    voice: str = DEFAULT_VOICE,
+    voice: str | None = None,
     rate: str = "+0%",
     pitch: str = "+0Hz",
     silence_ms: int = 300,
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
     limit: int | None = None,
     only: list[str] | None = None,
 ) -> dict[str, Any]:
+    load_env(ROOT / ".env")
+    provider = (provider or os.environ.get("TTS_PROVIDER", "edge-tts")).strip().lower()
+
+    if provider == "siliconflow":
+        if not voice or voice == DEFAULT_EDGE_VOICE:
+            voice = os.environ.get("SILICONFLOW_TTS_VOICE", DEFAULT_SILICONFLOW_VOICE)
+        model = model or os.environ.get("SILICONFLOW_TTS_MODEL", DEFAULT_SILICONFLOW_MODEL)
+        api_key = api_key or os.environ.get("SILICONFLOW_API_KEY", "").strip()
+        sem = asyncio.Semaphore(4)
+    else:
+        provider = "edge-tts"
+        if not voice or voice == DEFAULT_SILICONFLOW_VOICE:
+            voice = DEFAULT_EDGE_VOICE
+        sem = asyncio.Semaphore(6)
+
     script_path = ROOT / "data" / "script" / f"{doc_id}.json"
     if not script_path.exists():
         raise FileNotFoundError(f"找不到讲稿文件: {script_path}，请先运行 run_pipeline.py 生成讲稿")
@@ -237,7 +374,7 @@ async def run_audio_pipeline(
         items = items[:limit]
 
     print("=" * 76)
-    print(f"[音频合成] 文档={doc_id}  音色={voice}  语速={rate}  音调={pitch}")
+    print(f"[音频合成] 文档={doc_id}  引擎={provider}  音色={voice}  语速={rate}  音调={pitch}")
     print(f"[段落数量] 共 {len(items)} 段待处理")
 
     poly_rules = load_polyphone_rules(doc_id=doc_id)
@@ -249,18 +386,28 @@ async def run_audio_pipeline(
     silence_bytes, silence_sec = generate_silence_mp3_frame(silence_ms) if silence_ms > 0 else (b"", 0.0)
     current_time = 0.0
 
-    sem = asyncio.Semaphore(6)
-
     async def _worker(item_idx: int, sid: str, seg_info: dict[str, Any]):
         raw_text = seg_info.get("script", "").strip()
         safe_sid = sid.replace("#", "_").replace("/", "_")
         mp3_path = seg_dir / f"{safe_sid}.mp3"
         meta_path = seg_dir / f"{safe_sid}.json"
         async with sem:
-            meta = await synthesize_segment(sid, raw_text, voice, rate, pitch, mp3_path, meta_path, poly_rules=poly_rules)
+            meta = await synthesize_segment(
+                sid,
+                raw_text,
+                voice,
+                rate,
+                pitch,
+                mp3_path,
+                meta_path,
+                provider=provider,
+                model=model or DEFAULT_SILICONFLOW_MODEL,
+                api_key=api_key,
+                poly_rules=poly_rules,
+            )
             return item_idx, sid, seg_info, meta, mp3_path
 
-    print(f"--- 并行合成中 (并发 6) ---")
+    print(f"--- 并行合成中 (并发 {sem._value}) ---")
     tasks = [_worker(i, sid, info) for i, (sid, info) in enumerate(items)]
     results = await asyncio.gather(*tasks)
 
@@ -305,8 +452,6 @@ async def run_audio_pipeline(
         if (item_idx + 1) % 10 == 0 or (item_idx + 1) == len(results):
             print(f"  [{item_idx+1:03d}/{len(results):03d}] 累计时长 {current_time/60:4.1f} 分钟 ({current_time:5.1f}s)")
 
-
-
     # 1. 保存完整 MP3
     out_full_mp3 = AUDIO_DIR / f"{doc_id}.mp3" if not limit else AUDIO_DIR / f"{doc_id}_sample_{len(items)}.mp3"
     out_full_mp3.write_bytes(combined_audio)
@@ -316,6 +461,7 @@ async def run_audio_pipeline(
     ts_payload = {
         "doc_id": doc_id,
         "title": script_data.get("title", ""),
+        "provider": provider,
         "voice": voice,
         "rate": rate,
         "pitch": pitch,
@@ -323,6 +469,8 @@ async def run_audio_pipeline(
         "total_segments": len(timeline),
         "timeline": timeline,
     }
+    if provider == "siliconflow" and model:
+        ts_payload["model"] = model
     out_timestamps.write_text(json.dumps(ts_payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # 3. 保存 LRC 标准歌词字幕文件
@@ -348,6 +496,7 @@ async def run_audio_pipeline(
 
     print("=" * 76)
     print(f"[完成] 总时长: {current_time/60:.2f} 分钟 ({current_time:.1f} 秒)")
+    print(f"[引擎] {provider} ({voice})")
     print(f"[音频] {out_full_mp3}")
     print(f"[时间戳] {out_timestamps}")
     print(f"[LRC/VTT] {out_lrc} | {out_vtt}")
@@ -358,15 +507,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="生成讲稿音频与双向定位时间戳")
     ap.add_argument("--doc-id", default=None,
                     help="文档 ID（省略时自动挑；有多个会报错）")
-    ap.add_argument("--voice", default=DEFAULT_VOICE, help="edge-tts 语音名称")
-    ap.add_argument("--rate", default="+0%", help="语速微调，如 +5% / -5%")
-    ap.add_argument("--pitch", default="+0Hz", help="音调微调，如 +2Hz / -2Hz")
+    ap.add_argument("--provider", choices=["edge-tts", "siliconflow"], default=None,
+                    help="TTS 引擎: edge-tts (默认) 或 siliconflow (硅基流动)")
+    ap.add_argument("--voice", default=None, help="TTS 语音名称（默认根据 provider 选用最佳音色）")
+    ap.add_argument("--model", default=None, help="硅基流动模型名称（默认 FunAudioLLM/CosyVoice2-0.5B）")
+    ap.add_argument("--api-key", default=None, help="硅基流动 API Key（亦可配置在 .env）")
+    ap.add_argument("--rate", default="+0%", help="语速微调，如 +5%% / -5%%")
+    ap.add_argument("--pitch", default="+0Hz", help="音调微调，如 +2Hz / -2Hz (主要用于 edge-tts)")
     ap.add_argument("--silence", type=int, default=300, help="段落间静音时长(ms)")
     ap.add_argument("--limit", type=int, default=None, help="只处理前 N 段（试水用）")
     ap.add_argument("--only", nargs="*", default=None, help="只处理指定 sid")
     args = ap.parse_args()
 
-    # ⚠️ 以前这个参数默认写死成另一篇文献，忘传就静默对错文档干活
     doc_id = resolve_doc_id(ROOT, args.doc_id, stage="script")
     asyncio.run(run_audio_pipeline(
         doc_id=doc_id,
@@ -374,6 +526,9 @@ def main() -> int:
         rate=args.rate,
         pitch=args.pitch,
         silence_ms=args.silence,
+        provider=args.provider,
+        model=args.model,
+        api_key=args.api_key,
         limit=args.limit,
         only=args.only,
     ))

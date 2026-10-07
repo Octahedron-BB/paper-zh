@@ -120,7 +120,8 @@ python tools/run_pipeline.py --all
 | `--limit` | `--limit 3` | 仅处理前 N 个段落（用于快速验证翻译与发音质量） |
 | `--field` | `--field neuroscience` | 指定学科域，激活对应领域的专业术语表 |
 | `--no-audio` | `--no-audio` | 纯文本模式，跳过语音合成与伴读网页打包 |
-| `--voice` | `--voice zh-TW-HsiaoChenNeural` | 指定 TTS 声音模型（默认台湾晓臻，柔和自然） |
+| `--tts-provider` | `--tts-provider siliconflow` | 指定 TTS 引擎（`edge-tts` 微软晓臻 / `siliconflow` 硅基流动 CosyVoice 2） |
+| `--voice` | `--voice zh-TW-HsiaoChenNeural` | 指定 TTS 声音模型（默认根据引擎自适应最优音色） |
 | `--rate` | `--rate +10%` | 语音朗读语速微调 |
 
 ---

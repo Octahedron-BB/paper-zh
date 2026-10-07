@@ -216,13 +216,16 @@ def process_single_doc(doc_path: Path, doc_type: str, args: argparse.Namespace) 
 
     # 5. 音频合成阶段 (TTS + 时间戳)
     if (args.stage in ("audio", "all") or args.stage == "reader") and not args.no_audio:
-        print(f"\n--- 语音合成流水线 (Edge-TTS) ---")
+        tts_provider = args.tts_provider or os.environ.get("TTS_PROVIDER", "edge-tts")
+        print(f"\n--- 语音合成流水线 ({tts_provider}) ---")
         asyncio.run(run_audio_pipeline(
             doc_id=doc_id,
             voice=args.voice,
             rate=args.rate,
             pitch=args.pitch,
             silence_ms=args.silence_ms,
+            provider=args.tts_provider,
+            model=args.tts_model,
             limit=args.limit,
             only=args.only,
         ))
@@ -257,7 +260,10 @@ def main() -> int:
     ap.add_argument("--force-segment", action="store_true", help="强制重新分段")
 
     # 语音与播放器选项
-    ap.add_argument("--voice", default=DEFAULT_VOICE, help=f"TTS 音色（默认 {DEFAULT_VOICE}）")
+    ap.add_argument("--tts-provider", choices=["edge-tts", "siliconflow"], default=None,
+                    help="TTS 引擎: edge-tts (默认) 或 siliconflow (硅基流动)")
+    ap.add_argument("--tts-model", default=None, help="硅基流动模型名称（默认 FunAudioLLM/CosyVoice2-0.5B）")
+    ap.add_argument("--voice", default=None, help=f"TTS 音色（默认根据 provider 选用最佳音色，如 edge-tts 为 {DEFAULT_VOICE}）")
     ap.add_argument("--rate", default="+0%", help="TTS 语速微调（如 +10%%）")
     ap.add_argument("--pitch", default="+0Hz", help="TTS 音调微调（如 -2Hz）")
     ap.add_argument("--silence-ms", type=int, default=300, help="段落间微静音时长(毫秒)")
