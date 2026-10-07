@@ -63,7 +63,7 @@ def run_rewrite(doc: Document, translated: dict, terms: list[Term], provider: Pr
     done = 0
     model_id = f"{provider.name}:{provider.model}"
 
-    def work(seg):
+    def work(idx: int, seg: Segment):
         # ⚠️ 用**替换前**的原始译文（text_raw）作输入与缓存键。
         # 这样改 hard_replace 术语时，轨A 和轨B 都无需重跑（两条轨都免费）。
         rec = translated.get(seg.sid, {})
@@ -77,7 +77,11 @@ def run_rewrite(doc: Document, translated: dict, terms: list[Term], provider: Pr
         if entry is not None:
             return seg.sid, {"text": entry.value, "cached": True}, None
 
+        stage = "全文开头引言部分（可初次引入核心概念）" if (idx == 0 or getattr(seg, "sec_level", 1) == 0) else "正文深入论述部分（读者已知悉核心主题与缩写定义，请直接流畅叙述，切勿重复解释核心缩写）"
         user = prompts.SCRIPT_USER.format(
+            seg_idx=idx + 1,
+            total_segs=len(segs),
+            stage=stage,
             section=seg.sec_heading,
             term_block=render_prompt_block(hits) or "（无）",
             translated=zh)
@@ -90,7 +94,7 @@ def run_rewrite(doc: Document, translated: dict, terms: list[Term], provider: Pr
                               "prompt_version": prompts.SCRIPT_VERSION})
         return seg.sid, {"text": text, "cached": False, "source": zh}, None
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        futures = {pool.submit(work, s): s for s in segs}
+        futures = {pool.submit(work, idx, s): s for idx, s in enumerate(segs)}
         for fut in as_completed(futures):
             sid, payload, err = fut.result()
             with lock:

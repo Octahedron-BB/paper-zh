@@ -75,6 +75,8 @@ class Segment:
     indented: bool = False      # 原版式中该段是否首行缩进（版式溯源）
     col: int = 0                # 原版式中所在栏（0 左 / 1 右）
     in_box: bool = False        # 是否来自 Box（用户已决定：Box 不处理）
+    is_figure: bool = False     # 是否来自图表说明/Caption
+    fig_label: str = ""         # 图表标识（如 Fig. 1、图 1 说明）
 
     @property
     def src_hash(self) -> str:
@@ -89,7 +91,9 @@ class Segment:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Segment":
-        return cls(**d)
+        valid_keys = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered = {k: v for k, v in d.items() if k in valid_keys}
+        return cls(**filtered)
 
 
 @dataclass

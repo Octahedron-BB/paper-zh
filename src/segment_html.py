@@ -29,17 +29,28 @@ SKIP_SECTIONS = {
 
 
 def clean_paragraph_html(raw: str) -> str:
-    """清理段落 HTML：去除参考文献引用、内联标签，转义实体。"""
-    # 移除上标引用链接
-    s = re.sub(r'<a\b[^>]*data-test=\"citation-ref\"[^>]*>.*?</a>', '', raw, flags=re.DOTALL)
+    """清理段落 HTML：保留规范 [N] 引用标记，去除无关内联标签，转义实体并剔除转载声明。"""
+    # 格式化上标引用链接为标准 [N] 占位符，避免标点与数字无缝粘连（例如 ...barrier1. 变成 ...barrier [1].）
+    s = re.sub(r'<a\b[^>]*data-test=\"citation-ref\"[^>]*>(\d+(?:[,\s\-–—\d]*))</a>', r' [\1]', raw)
+    s = re.sub(r'<a\b[^>]*data-track-action=\"reference anchor\"[^>]*>(\d+(?:[,\s\-–—\d]*))</a>', r' [\1]', s)
+    s = re.sub(r'<sup\b[^>]*>([\d,\s\-–—]+)</sup>', r' [\1]', s)
+    # 其余未匹配到的引用链接彻底移除
+    s = re.sub(r'<a\b[^>]*data-test=\"citation-ref\"[^>]*>.*?</a>', '', s, flags=re.DOTALL)
     s = re.sub(r'<a\b[^>]*data-track-action=\"reference anchor\"[^>]*>.*?</a>', '', s, flags=re.DOTALL)
+    # 移除内嵌表格、公式与浮动元素
+    s = re.sub(r'<(figure|table|tbody|thead|tr)\b[^>]*>.*?</\1>', '', s, flags=re.DOTALL)
     # 移除其余 HTML 标签
     s = re.sub(r'<[^>]+>', '', s)
     # 还原 HTML 实体
     s = html.unescape(s)
     # 规范化空格与软连字符
     s = s.replace('\xa0', ' ').replace('\u00ad', '')
-    return re.sub(r'\s+', ' ', s).strip()
+    s = re.sub(r'\s+', ' ', s).strip()
+    # 紧贴标点与引用
+    s = re.sub(r'\s+(\[\d+(?:[,\s\-–—\d]*)\])', r'\1', s)
+    # 剔除末尾版权声明行（如 Reprinted with permission from ref. 61, Elsevier）
+    s = re.sub(r'(?:Reprinted|Adapted)\s+with\s+permission\s+from\s+.*$', '', s, flags=re.IGNORECASE).strip()
+    return s
 
 
 def parse_nature_html(html_text: str, doc_id: str, html_path: Path | str = "") -> Document:
@@ -61,20 +72,80 @@ def parse_nature_html(html_text: str, doc_id: str, html_path: Path | str = "") -
         if norm_title.lower() in SKIP_SECTIONS:
             continue
 
-        # 剔除插图、表格与侧边框
-        body_clean = re.sub(r'<figure\b[^>]*>.*?</figure>', '', body, flags=re.DOTALL)
-        body_clean = re.sub(r'<div\b[^>]*class=\"[^\"]*c-article-box[^\"]*\"[^>]*>.*?</div>', '', body_clean, flags=re.DOTALL)
-        body_clean = re.sub(r'<table\b[^>]*>.*?</table>', '', body_clean, flags=re.DOTALL)
-
-        # 提取标题与正文段落流（保持原文阅读顺序）
-        tokens = re.findall(r'<(h[3-4]|p)\b[^>]*>(.*?)</\1>', body_clean, flags=re.DOTALL)
-        if not tokens:
-            continue
-
         main_slug = slug(norm_title)
         active_sec = Section(heading=norm_title, level=1, page=1)
         active_path = main_slug
         sections.append(active_sec)
+
+        # A. 提取插图说明 (Figure Captions)，标注为 is_figure=True 并提取 Fig 标识
+        fig_blocks = re.findall(
+            r'<(?:div\b[^>]*class=\"[^\"]*c-article-section__figure[^\"]*\"|figure\b)[^>]*>(.*?)</(?:div|figure)>',
+            body, flags=re.DOTALL
+        )
+        for fig_body in fig_blocks:
+            fig_label_m = re.search(r'<(?:figcaption|b\b[^>]*class=\"[^\"]*c-article-section__figure-caption[^\"]*\")[^>]*>(.*?)</(?:figcaption|b)>', fig_body, re.DOTALL)
+            fig_label = clean_paragraph_html(fig_label_m.group(1)) if fig_label_m else "Fig 说明"
+            fig_ps = re.findall(r'<p\b[^>]*>(.*?)</p>', fig_body, re.DOTALL)
+            for fp in fig_ps:
+                p_text = clean_paragraph_html(fp)
+                if not p_text or len(p_text.split()) < 3:
+                    continue
+                idx = len(active_sec.segments) + 1
+                sid = f"{doc_id}#{active_path}#fig{idx:02d}"
+                seg = Segment(
+                    sid=sid,
+                    doc_id=doc_id,
+                    sec_path=active_path,
+                    sec_heading=active_sec.heading,
+                    sec_level=active_sec.level,
+                    index=idx,
+                    page=1,
+                    src_text=p_text,
+                    n_words=len(p_text.split()),
+                    indented=False,
+                    col=0,
+                    in_box=False,
+                    is_figure=True,
+                    fig_label=fig_label,
+                )
+                active_sec.segments.append(seg)
+
+        # 剔除已处理的插图与表格
+        body_clean = re.sub(r'<figure\b[^>]*>.*?</figure>', '', body, flags=re.DOTALL)
+        body_clean = re.sub(r'<div\b[^>]*class=\"[^\"]*c-article-section__figure[^\"]*\"[^>]*>.*?</div>', '', body_clean, flags=re.DOTALL)
+        body_clean = re.sub(r'<table\b[^>]*>.*?</table>', '', body_clean, flags=re.DOTALL)
+
+        # B. 智能处理 Box 诊断标准与列表清单：将引言句与后面的 <ol>/<ul> 聚合为一体
+        # 例如：associated with two or more of the following criteria: 后紧跟的 1. ... 2. ...
+        def aggregate_list_match(m: re.Match) -> str:
+            intro_p = m.group(1)
+            list_content = m.group(2)
+            # 提取所有 li
+            lis = re.findall(r'<li\b[^>]*>(.*?)</li>', list_content, re.DOTALL)
+            items = []
+            for li_idx, li in enumerate(lis):
+                li_clean = clean_paragraph_html(li)
+                if li_clean:
+                    if not re.match(r'^\d+\.', li_clean):
+                        li_clean = f"{li_idx + 1}. {li_clean}"
+                    items.append(li_clean)
+            if items:
+                joined = "; ".join(items)
+                return f"{intro_p} {joined}</p>"
+            return m.group(0)
+
+        # 匹配以冒号结尾的段落后紧随列表
+        body_clean = re.sub(
+            r'(<p\b[^>]*>[^<]*?:)\s*</p>\s*<(?:ol|ul)\b[^>]*>(.*?)</(?:ol|ul)>',
+            aggregate_list_match,
+            body_clean,
+            flags=re.DOTALL
+        )
+
+        # 提取标题与正文段落流（保持原文阅读顺序）
+        tokens = re.findall(r'<(h[3-4]|p)\b[^>]*>(.*?)</\1>', body_clean, flags=re.DOTALL)
+        if not tokens and not active_sec.segments:
+            continue
 
         for tag, content in tokens:
             if tag in ('h3', 'h4'):
@@ -105,6 +176,8 @@ def parse_nature_html(html_text: str, doc_id: str, html_path: Path | str = "") -
                     indented=False,
                     col=0,
                     in_box=False,
+                    is_figure=False,
+                    fig_label="",
                 )
                 active_sec.segments.append(seg)
 

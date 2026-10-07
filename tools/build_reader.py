@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -197,6 +198,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       margin-bottom: 12px;
       user-select: none;
     }
+    .card-meta-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
     .card-meta .play-tag {
       color: var(--primary);
       font-weight: 600;
@@ -207,6 +214,29 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       padding: 2px 8px;
       border-radius: 6px;
       border: 1px solid var(--border);
+    }
+    .figure-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+      padding: 1px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.74rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      .figure-tag {
+        background: #451a03;
+        color: #fde68a;
+        border-color: #78350f;
+      }
+    }
+
+    .bilingual-body {
+      display: block;
     }
 
     .text-zh-trans, .text-zh-script {
@@ -230,7 +260,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       opacity: 0.85;
     }
 
-    /* Sentence-level Real-time Karaoke Highlight */
+    /* Citation Superscripts */
+    .cite-sup {
+      font-size: 0.75em;
+      line-height: 0;
+      position: relative;
+      vertical-align: super;
+      color: var(--primary);
+      font-weight: 600;
+      margin: 0 1.5px;
+      cursor: default;
+    }
+
+    /* Sentence-level Real-time Karaoke Highlight & Bidirectional Linkage */
     .sentence-span {
       display: inline;
       padding: 1px 3px;
@@ -238,9 +280,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
       cursor: pointer;
     }
-    .sentence-span:hover {
-      background: var(--primary-light);
+    .sentence-span:hover, .sentence-span.hover-sync {
+      background: rgba(37, 99, 235, 0.12);
       color: var(--primary);
+      border-radius: 4px;
     }
     .sentence-span.active-sentence {
       background: var(--primary);
@@ -263,17 +306,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     /* View Mode Toggles */
+    .view-interleave .bilingual-body { display: block; }
     .view-interleave .text-zh-trans { display: block; }
     .view-interleave .text-en-source { display: block; }
     .view-interleave .text-zh-script { display: none; }
 
+    .view-script .bilingual-body { display: none; }
     .view-script .text-zh-script { display: block; }
-    .view-script .text-zh-trans { display: none; }
-    .view-script .text-en-source { display: none; }
 
+    .view-trans .bilingual-body { display: block; }
     .view-trans .text-zh-trans { display: block; }
-    .view-trans .text-zh-script { display: none; }
     .view-trans .text-en-source { display: none; }
+    .view-trans .text-zh-script { display: none; }
 
     /* Modern Floating Player Bar */
     .player-dock {
@@ -592,6 +636,29 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
     }
 
+    /* 电脑端左右对照 (>= 900px) */
+    @media (min-width: 900px) {
+      .container {
+        max-width: 1160px;
+      }
+      .player-pill {
+        max-width: 1160px;
+      }
+      .view-interleave .bilingual-body {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+        align-items: start;
+      }
+      .view-interleave .text-en-source {
+        border-top: none;
+        border-left: 1px dashed var(--border);
+        padding-top: 0;
+        margin-top: 0;
+        padding-left: 20px;
+      }
+    }
+
     /* Sidebar Drawer */
     .sidebar {
       position: fixed;
@@ -808,6 +875,33 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       audio.play().catch(e => console.log('Play err:', e));
     }
 
+    function jumpToSentence(segIdx, senIdx, startSec) {
+      if (startSec !== undefined) {
+        audio.currentTime = startSec;
+        audio.play().catch(e => console.log('Play err:', e));
+      }
+      document.querySelectorAll('.sentence-span').forEach(s => s.classList.remove('active-sentence'));
+      document.querySelectorAll(`.sentence-span[data-seg="${segIdx}"][data-sen="${senIdx}"]`).forEach(s => s.classList.add('active-sentence'));
+    }
+
+    // 双向联动高亮：鼠标悬停句子，同步高亮对应语言的句子
+    document.addEventListener('mouseover', (e) => {
+      const span = e.target.closest('.sentence-span');
+      if (span) {
+        const seg = span.getAttribute('data-seg');
+        const sen = span.getAttribute('data-sen');
+        if (seg !== null && sen !== null) {
+          document.querySelectorAll(`.sentence-span[data-seg="${seg}"][data-sen="${sen}"]`).forEach(el => el.classList.add('hover-sync'));
+        }
+      }
+    });
+    document.addEventListener('mouseout', (e) => {
+      const span = e.target.closest('.sentence-span');
+      if (span) {
+        document.querySelectorAll('.sentence-span.hover-sync').forEach(el => el.classList.remove('hover-sync'));
+      }
+    });
+
     function setViewMode(mode) {
       document.body.className = `view-${mode}`;
       document.querySelectorAll('.nav-tools .btn').forEach(b => {
@@ -883,10 +977,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         if (activeToc) activeToc.classList.add('active');
       }
 
-      // Real-time Sentence-level tracking & highlighting
+      // Real-time Sentence-level tracking & bidirectional highlighting
       const curCard = document.querySelector('.segment-card.active');
       if (curCard) {
-        const spans = curCard.querySelectorAll('.sentence-span');
+        const isScriptMode = document.body.classList.contains('view-script');
+        const selector = isScriptMode ? '.script-span' : '.trans-span';
+        let spans = curCard.querySelectorAll(selector);
+        if (spans.length === 0) spans = curCard.querySelectorAll('.sentence-span');
+
         let activeSpan = null;
         for (const span of spans) {
           const sStart = parseFloat(span.dataset.start);
@@ -896,11 +994,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             break;
           }
         }
-        document.querySelectorAll('.sentence-span.active-sentence').forEach(el => {
-          if (el !== activeSpan) el.classList.remove('active-sentence');
-        });
-        if (activeSpan && !activeSpan.classList.contains('active-sentence')) {
-          activeSpan.classList.add('active-sentence');
+        if (activeSpan) {
+          const segIdx = activeSpan.dataset.seg;
+          const senIdx = activeSpan.dataset.sen;
+          document.querySelectorAll('.sentence-span').forEach(el => el.classList.remove('active-sentence'));
+          if (segIdx !== null && senIdx !== null) {
+            document.querySelectorAll(`.sentence-span[data-seg="${segIdx}"][data-sen="${senIdx}"]`).forEach(el => el.classList.add('active-sentence'));
+          } else {
+            activeSpan.classList.add('active-sentence');
+          }
         }
       } else {
         document.querySelectorAll('.sentence-span.active-sentence').forEach(el => el.classList.remove('active-sentence'));
@@ -972,6 +1074,35 @@ def format_duration_str(seconds: float) -> str:
     return f"{mins:02d}:{secs:02d}"
 
 
+def split_sentences_zh(text: str) -> list[str]:
+    if not text:
+        return []
+    matches = re.findall(r'[^。！？；\n]+[。！？；\n]*', text)
+    return matches if matches else [text]
+
+
+def split_sentences_en(text: str) -> list[str]:
+    if not text:
+        return []
+    protected = re.sub(
+        r'\b(Fig|Figure|Ref|ref|e\.g|i\.e|et al|vs|dr|mr|mrs|prof)\.',
+        lambda m: m.group(0).replace('.', '__DOT__'),
+        text,
+        flags=re.I,
+    )
+    protected = re.sub(r'(\d+)\.(\d+)', r'\1__DOT__\2', protected)
+    parts = re.findall(r'[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$', protected)
+    if not parts:
+        return [text]
+    return [p.replace('__DOT__', '.').strip() for p in parts if p.strip()]
+
+
+def format_citation_superscripts(text: str) -> str:
+    if not text:
+        return ""
+    return re.sub(r'\[((?:ref\.\s*)?\d+(?:[,\s\-–—\d]*)|\w+)\]', r'<sup class="cite-sup">[\1]</sup>', text)
+
+
 def build_reader(doc_id: str, embed_audio: bool = True) -> Path:
     segments_path = ROOT / "data" / "segments" / f"{doc_id}.json"
     trans_path = ROOT / "data" / "translation" / f"{doc_id}.json"
@@ -1001,16 +1132,23 @@ def build_reader(doc_id: str, embed_audio: bool = True) -> Path:
 
     script_map = {sid: item.get("script", "") for sid, item in script_data.get("segments", {}).items()}
     source_map = {}
+    seg_meta_map = {}
     for sec in seg_data.get("sections", []):
         for seg in sec.get("segments", []):
-            source_map[seg.get("sid", "")] = seg.get("src_text", "")
+            s_id = seg.get("sid", "")
+            source_map[s_id] = seg.get("src_text", "")
+            seg_meta_map[s_id] = {
+                "src_text": seg.get("src_text", ""),
+                "is_figure": seg.get("is_figure", False),
+                "fig_label": seg.get("fig_label", "")
+            }
 
     # 1. 组织文章主体 HTML
     content_blocks: list[str] = []
     toc_blocks: list[str] = []
     seen_sections = set()
 
-    for item in timeline:
+    for idx, item in enumerate(timeline):
         sid = item["sid"]
         sec_path = item.get("sec_path", "")
         sec_heading = item.get("sec_heading", "")
@@ -1030,29 +1168,79 @@ def build_reader(doc_id: str, embed_audio: bool = True) -> Path:
 
         zh_trans = trans_map.get(sid) or item.get("script", "")
         zh_script = script_map.get(sid, item.get("script", ""))
-        en_source = source_map.get(sid, "")
+        meta = seg_meta_map.get(sid, {})
+        en_source = meta.get("src_text") or source_map.get(sid, "")
+        is_figure = bool(meta.get("is_figure") or item.get("is_figure"))
+        fig_label = meta.get("fig_label") or item.get("fig_label") or "图释 (Figure)"
         safe_sid_id = sid.replace("#", "_").replace("/", "_")
 
-        # 构建带句级时间戳的口语讲稿 HTML（支持逐句变色与点击单句跳转）
-        sentence_spans = []
-        for s in item.get("sentences", []):
-            s_text = s.get("text", "")
-            s_start = s.get("start_sec", 0.0)
-            s_end = s.get("end_sec", 0.0)
-            sentence_spans.append(
-                f'<span class="sentence-span" data-start="{s_start}" data-end="{s_end}" onclick="event.stopPropagation(); jumpToSegment({s_start});">{s_text}</span>'
+        trans_sentences = split_sentences_zh(zh_trans)
+        script_sentences = item.get("sentences", [])
+        if not script_sentences:
+            script_sentences = [{"text": st} for st in split_sentences_zh(zh_script)]
+        en_sentences = split_sentences_en(en_source)
+
+        zh_trans_spans = []
+        for s_idx, st in enumerate(trans_sentences):
+            s_start = None
+            s_end = None
+            if s_idx < len(script_sentences) and "start_sec" in script_sentences[s_idx]:
+                s_start = script_sentences[s_idx]["start_sec"]
+                s_end = script_sentences[s_idx].get("end_sec", s_start + 3)
+            else:
+                seg_start = start_sec
+                seg_dur = item.get("duration_sec", 6.0)
+                tot_chars = sum(len(s) for s in trans_sentences) or 1
+                s_start = seg_start + seg_dur * (sum(len(trans_sentences[k]) for k in range(s_idx)) / tot_chars)
+                s_end = s_start + seg_dur * (len(st) / tot_chars)
+            start_attr = f'data-start="{s_start:.2f}" data-end="{s_end:.2f}"' if s_start is not None else ""
+            txt_sup = format_citation_superscripts(st)
+            zh_trans_spans.append(
+                f'<span class="sentence-span trans-span" data-seg="{idx}" data-sen="{s_idx}" {start_attr} onclick="event.stopPropagation(); jumpToSentence({idx}, {s_idx}{f", {s_start:.2f}" if s_start is not None else ""});">{txt_sup}</span>'
             )
-        zh_script_html = "".join(sentence_spans) if sentence_spans else zh_script
+        zh_trans_html = "".join(zh_trans_spans)
+
+        zh_script_spans = []
+        for s_idx, s in enumerate(script_sentences):
+            s_text = s.get("text", "")
+            s_start = s.get("start_sec")
+            s_end = s.get("end_sec")
+            start_attr = f'data-start="{s_start:.2f}" data-end="{s_end:.2f}"' if s_start is not None and s_end is not None else ""
+            txt_sup = format_citation_superscripts(s_text)
+            zh_script_spans.append(
+                f'<span class="sentence-span script-span" data-seg="{idx}" data-sen="{s_idx}" {start_attr} onclick="event.stopPropagation(); jumpToSentence({idx}, {s_idx}{f", {s_start:.2f}" if s_start is not None else ""});">{txt_sup}</span>'
+            )
+        zh_script_html = "".join(zh_script_spans)
+
+        en_spans = []
+        for e_idx, st_en in enumerate(en_sentences):
+            if len(trans_sentences) > 0:
+                if len(en_sentences) == len(trans_sentences):
+                    corr_s_idx = e_idx
+                else:
+                    corr_s_idx = min(int((e_idx / len(en_sentences)) * len(trans_sentences)), len(trans_sentences) - 1)
+            else:
+                corr_s_idx = e_idx
+            txt_sup = format_citation_superscripts(st_en)
+            en_spans.append(
+                f'<span class="sentence-span en-span" data-seg="{idx}" data-sen="{corr_s_idx}" onclick="event.stopPropagation(); jumpToSentence({idx}, {corr_s_idx});">{txt_sup} </span>'
+            )
+        en_source_html = "".join(en_spans)
 
         card_html = f"""
-        <div class="segment-card" id="seg-{safe_sid_id}" onclick="jumpToSegment({start_sec})">
+        <div class="segment-card" id="seg-{safe_sid_id}" data-seg-idx="{idx}" onclick="jumpToSegment({start_sec})">
           <div class="card-meta">
-            <span class="play-tag">▶ {format_duration_str(start_sec)}</span>
+            <div class="card-meta-left">
+              <span class="play-tag">▶ {format_duration_str(start_sec)}</span>
+              {f'<span class="figure-tag">🖼️ {fig_label}</span>' if is_figure else ''}
+            </div>
             <span>时长 {item.get('duration_sec', 0):.1f}s</span>
           </div>
-          <div class="text-zh-trans"><span class="badge-tag">译文</span>{zh_trans}</div>
+          <div class="bilingual-body">
+            <div class="text-zh-trans"><span class="badge-tag">译文</span>{zh_trans_html}</div>
+            <div class="text-en-source"><span class="badge-tag">原文</span>{en_source_html}</div>
+          </div>
           <div class="text-zh-script"><span class="badge-tag">讲稿</span>{zh_script_html}</div>
-          <div class="text-en-source"><span class="badge-tag">原文</span>{en_source}</div>
         </div>
         """
         content_blocks.append(card_html)

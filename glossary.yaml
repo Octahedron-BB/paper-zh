@@ -215,3 +215,16 @@ terms:
     scope: global
     full_en: small intestinal bacterial overgrowth
     status: approved
+  - term: reassurance
+    zh: 消除疑虑与病情安抚
+    mode: hard_replace
+    aliases: ["消除疑虑", "心理安慰", "病情安抚", "解释安慰"]
+    scope: global
+    status: approved
+  - term: multi-omics
+    zh: 多组学
+    mode: hard_replace
+    aliases: ["多组学方法", "多组学技术"]
+    scope: global
+    status: approved
+
