@@ -35,7 +35,7 @@ const ttsProviders: Array<{
     name: '硅基流动 (CosyVoice 2 / 阿里通义)',
     badge: '✨ 强烈推荐 · 免反代直连',
     badgeColor: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 font-semibold',
-    desc: '阿里顶尖开源语音大模型（带呼吸声与真实起伏）。支持浏览器跨域直连，在 GitHub Pages 完美运行！',
+    desc: '阿里顶尖开源语音大模型（带呼吸声与真实起伏），支持浏览器跨域直连。',
   },
   {
     id: 'edge-tts',
@@ -189,7 +189,7 @@ async function testVoicePlayback() {
       isTestingVoice.value = false
       alert(
         `硅基流动 (CosyVoice) 试听受阻：\n${err.message || '请求受阻'}\n\n` +
-        `💡 提示：请在下方填入有效的硅基流动 API Key（以 sk- 开头，可在 cloud.siliconflow.cn 免费注册获取赠送额度）。`
+        `💡 提示：请在下方填入有效的硅基流动 API Key（以 sk- 开头，可在 cloud.siliconflow.cn 免费注册）。`
       )
       return
     }
@@ -540,7 +540,7 @@ function handleClearStorage() {
                     target="_blank"
                     class="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
                   >
-                    <span>免费获取 API Key (新用户送额度)</span>
+                    <span>获取 API Key</span>
                     <ExternalLink class="w-3 h-3" />
                   </a>
                 </div>
