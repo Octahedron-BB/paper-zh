@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { settingsState } from '../store/settings'
 import type { TtsProvider } from '../core/types'
 import { synthesizeEdgeTts } from '../core/edgeTts'
+import { synthesizeSiliconFlowTts } from '../core/siliconflowTts'
 import {
   KeyRound,
   Sparkles,
@@ -10,6 +11,7 @@ import {
   ShieldCheck,
   X,
   VolumeX,
+  ExternalLink,
 } from 'lucide-vue-next'
 
 const emit = defineEmits<{
@@ -17,6 +19,7 @@ const emit = defineEmits<{
 }>()
 
 const showApiKey = ref(false)
+const showSiliconflowKey = ref(false)
 const isTestingVoice = ref(false)
 const testAudioEl = ref<HTMLAudioElement | null>(null)
 
@@ -28,11 +31,18 @@ const ttsProviders: Array<{
   desc: string
 }> = [
   {
+    id: 'siliconflow',
+    name: '硅基流动 (CosyVoice 2 / 阿里通义)',
+    badge: '✨ 强烈推荐 · 免反代直连',
+    badgeColor: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 font-semibold',
+    desc: '阿里顶尖开源语音大模型（带呼吸声与真实起伏）。支持浏览器跨域直连，在 GitHub Pages 完美运行！',
+  },
+  {
     id: 'edge-tts',
     name: 'Microsoft Edge-TTS / 系统精选',
-    badge: '内置推荐 · 免配置',
+    badge: '高清神经音色 · 本地开箱即用',
     badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-    desc: '高质量自然流利人声，台湾晓臻、中国晓晓等多种口语风格，支持逐句卡拉OK高亮。',
+    desc: '高质量真人流利人声，台湾晓臻、中国晓晓等。本地（npm run dev）直接使用；静态网页需配反代。',
   },
   {
     id: 'web-speech',
@@ -40,27 +50,6 @@ const ttsProviders: Array<{
     badge: '完全离线 · 零流量',
     badgeColor: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
     desc: '直接调用操作系统（macOS/Windows/iOS/Android）自带朗读引擎，无需网络。',
-  },
-  {
-    id: 'openai',
-    name: 'OpenAI TTS (tts-1 / hd)',
-    badge: '待适配 · 预留配置',
-    badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-    desc: 'OpenAI 官方高精度语音接口 (Alloy, Echo, Shimmer 等)，支持配置专属 Key。',
-  },
-  {
-    id: 'cosyvoice',
-    name: '阿里 CosyVoice / 通义',
-    badge: '待适配 · 预留配置',
-    badgeColor: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300',
-    desc: '中文顶级超自然口语合成引擎，音调与语调极具感染力。',
-  },
-  {
-    id: 'siliconflow',
-    name: '硅基流动 / IndexTTS',
-    badge: '待适配 · 预留配置',
-    badgeColor: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300',
-    desc: '国产开源语音大模型高速云端托管服务。',
   },
   {
     id: 'none',
@@ -85,8 +74,14 @@ const cosyPresetVoices = [
 ]
 
 const siliconflowPresetVoices = [
-  { id: 'siliconflow-indextts-male', name: 'IndexTTS · 智臻学者 (深度男声 · 预留)', lang: 'zh-CN' },
-  { id: 'siliconflow-indextts-female', name: 'IndexTTS · 晨曦学姐 (清晰女声 · 预留)', lang: 'zh-CN' },
+  { id: 'FunAudioLLM/CosyVoice2-0.5B:alex', name: 'CosyVoice 2 · Alex (男声 · 沉稳学者 · 推荐)', lang: 'zh-CN' },
+  { id: 'FunAudioLLM/CosyVoice2-0.5B:benjamin', name: 'CosyVoice 2 · Benjamin (男声 · 低沉磁性)', lang: 'zh-CN' },
+  { id: 'FunAudioLLM/CosyVoice2-0.5B:charles', name: 'CosyVoice 2 · Charles (男声 · 深情播报)', lang: 'zh-CN' },
+  { id: 'FunAudioLLM/CosyVoice2-0.5B:david', name: 'CosyVoice 2 · David (男声 · 明朗阳光)', lang: 'zh-CN' },
+  { id: 'FunAudioLLM/CosyVoice2-0.5B:anna', name: 'CosyVoice 2 · Anna (女声 · 沉稳专业 · 推荐)', lang: 'zh-CN' },
+  { id: 'FunAudioLLM/CosyVoice2-0.5B:bella', name: 'CosyVoice 2 · Bella (女声 · 热情生动)', lang: 'zh-CN' },
+  { id: 'FunAudioLLM/CosyVoice2-0.5B:claire', name: 'CosyVoice 2 · Claire (女声 · 温柔知性)', lang: 'zh-CN' },
+  { id: 'FunAudioLLM/CosyVoice2-0.5B:diana', name: 'CosyVoice 2 · Diana (女声 · 清晰明亮)', lang: 'zh-CN' },
 ]
 
 const systemVoices = ref<{ id: string; name: string; lang: string }[]>([])
@@ -162,7 +157,45 @@ async function testVoicePlayback() {
 
   const testText = '您好，这是学术文献伴读语音试听效果。我将为您清晰、自然地朗读学术论文与中英讲稿。'
 
-  // 1. 如果当前选定的是 Edge-TTS：真正调用云端 Edge-TTS 合成并播放真实 MP3 语音！
+  // 1. 如果当前选定的是 SiliconFlow：调用硅基流动 CosyVoice 接口 (免反代，直连)
+  if (settingsState.ttsProvider === 'siliconflow') {
+    try {
+      const res = await synthesizeSiliconFlowTts(
+        testText,
+        settingsState.siliconflowApiKey || settingsState.customTtsApiKey || '',
+        settingsState.ttsVoice || 'FunAudioLLM/CosyVoice2-0.5B:alex',
+        settingsState.siliconflowModel || 'FunAudioLLM/CosyVoice2-0.5B',
+        settingsState.ttsRate
+      )
+      if (res.audioBlob && res.audioBlob.size > 0) {
+        const url = URL.createObjectURL(res.audioBlob)
+        const audio = new Audio(url)
+        testAudioEl.value = audio
+        audio.onended = () => {
+          isTestingVoice.value = false
+          URL.revokeObjectURL(url)
+          testAudioEl.value = null
+        }
+        audio.onerror = () => {
+          isTestingVoice.value = false
+          URL.revokeObjectURL(url)
+          testAudioEl.value = null
+        }
+        await audio.play()
+        return
+      }
+      throw new Error('未接收到有效的音频数据')
+    } catch (err: any) {
+      isTestingVoice.value = false
+      alert(
+        `硅基流动 (CosyVoice) 试听受阻：\n${err.message || '请求受阻'}\n\n` +
+        `💡 提示：请在下方填入有效的硅基流动 API Key（以 sk- 开头，可在 cloud.siliconflow.cn 免费注册获取赠送额度）。`
+      )
+      return
+    }
+  }
+
+  // 2. 如果当前选定的是 Edge-TTS：真正调用云端 Edge-TTS 合成并播放真实 MP3 语音！
   if (settingsState.ttsProvider === 'edge-tts') {
     try {
       const res = await synthesizeEdgeTts(
@@ -196,7 +229,7 @@ async function testVoicePlayback() {
         `【原因与排查】\n` +
         `由于 GitHub Pages 为纯静态托管，微软安全策略拒绝了浏览器网页的跨域直连 (403 Forbidden)。\n\n` +
         `【解决方案】\n` +
-        `1. 本地使用：在电脑终端运行 npm run dev 打开本地页面，自带 Node.js 代理，100% 畅听正版晓臻！\n` +
+        `1. 本地使用：在电脑终端运行 npm run dev 打开本地页面，自带 Node.js 代理。\n` +
         `2. 静态页面：请在下方配置 Edge-TTS 代理地址（如免费 Cloudflare Worker 代理）；\n` +
         `3. 免代理方案：可将伴读引擎切换为『系统原生 Web Speech』。`
       )
@@ -489,6 +522,60 @@ function handleClearStorage() {
                 >
                   {{ r.label }}
                 </button>
+              </div>
+            </div>
+
+            <!-- 硅基流动专属配置 (CosyVoice API Key & Model) -->
+            <div
+              v-if="settingsState.ttsProvider === 'siliconflow'"
+              class="pt-3 border-t border-slate-200/60 dark:border-slate-700/60 space-y-3"
+            >
+              <div>
+                <div class="flex items-center justify-between mb-1.5">
+                  <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                    硅基流动 API Key
+                  </label>
+                  <a
+                    href="https://cloud.siliconflow.cn/"
+                    target="_blank"
+                    class="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                  >
+                    <span>免费获取 API Key (新用户送额度)</span>
+                    <ExternalLink class="w-3 h-3" />
+                  </a>
+                </div>
+                <div class="relative">
+                  <input
+                    :type="showSiliconflowKey ? 'text' : 'password'"
+                    v-model="settingsState.siliconflowApiKey"
+                    placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+                    class="w-full pl-3.5 pr-12 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    @click="showSiliconflowKey = !showSiliconflowKey"
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-[11px]"
+                  >
+                    {{ showSiliconflowKey ? '隐藏' : '显示' }}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+                  语音合成模型
+                </label>
+                <select
+                  v-model="settingsState.siliconflowModel"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"
+                >
+                  <option value="FunAudioLLM/CosyVoice2-0.5B">FunAudioLLM/CosyVoice2-0.5B (强烈推荐 · 顶级拟真口语 · 极度自然)</option>
+                  <option value="FunAudioLLM/CosyVoice-300M">FunAudioLLM/CosyVoice-300M (轻量版 · 极速响应)</option>
+                </select>
+              </div>
+
+              <div class="p-2.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/60 dark:border-indigo-900/40 text-[11px] text-indigo-900 dark:text-indigo-200 leading-relaxed">
+                ✨ <b>静态网页原生支持</b>：硅基流动开放了全套 CORS 跨域权限，在 GitHub Pages 纯静态网页上可直接调用，零反代、零本地服务！
               </div>
             </div>
 

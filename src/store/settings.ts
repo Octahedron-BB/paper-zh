@@ -15,6 +15,8 @@ const defaultSettings: Settings = {
   academicProxyUrl: '',
   academicProxyCookie: '',
   edgeTtsProxyUrl: '',
+  siliconflowApiKey: '',
+  siliconflowModel: 'FunAudioLLM/CosyVoice2-0.5B',
   customTtsApiKey: '',
   customTtsModel: '',
 }

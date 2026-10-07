@@ -60,6 +60,8 @@ export interface Settings {
   academicProxyUrl?: string
   academicProxyCookie?: string
   edgeTtsProxyUrl?: string
+  siliconflowApiKey?: string
+  siliconflowModel?: string
   // 预留其他 TTS 供应商配置
   customTtsApiKey?: string
   customTtsModel?: string

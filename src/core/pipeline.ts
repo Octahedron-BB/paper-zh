@@ -5,6 +5,7 @@ import { matchGlossaryTerms, renderPromptBlock, applyHardReplace } from './gloss
 import { cleanForTts } from './polyphone'
 import { TRANSLATE_SYSTEM, SCRIPT_SYSTEM } from './prompts'
 import { synthesizeEdgeTts } from './edgeTts'
+import { synthesizeSiliconFlowTts } from './siliconflowTts'
 import { generateReaderHtml } from './readerBuilder'
 import { savePaperToLibrary } from '../store/library'
 
@@ -293,12 +294,22 @@ export async function runDocumentPipeline(
         let res: any = null
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
-            res = await synthesizeEdgeTts(
-              scriptText,
-              settings.ttsVoice,
-              settings.ttsRate,
-              settings.edgeTtsProxyUrl
-            )
+            if (settings.ttsProvider === 'siliconflow') {
+              res = await synthesizeSiliconFlowTts(
+                scriptText,
+                settings.siliconflowApiKey || settings.customTtsApiKey || '',
+                settings.ttsVoice,
+                settings.siliconflowModel,
+                settings.ttsRate
+              )
+            } else {
+              res = await synthesizeEdgeTts(
+                scriptText,
+                settings.ttsVoice,
+                settings.ttsRate,
+                settings.edgeTtsProxyUrl
+              )
+            }
             if (res && res.audioBlob && res.audioBlob.size > 0) break
           } catch (e) {
             if (attempt === 3) {
