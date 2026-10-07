@@ -62,10 +62,9 @@ const modelPresets: Record<LlmProvider, string[]> = {
     'gpt-4.5-preview',
   ],
   gemini: [
+    'gemini-3.5-flash-lite',
     'gemini-3.8-flash',
-    'gemini-2.5-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
+    'gemini-3.5-flash',
   ],
   custom: [
     'qwen2.5:7b',

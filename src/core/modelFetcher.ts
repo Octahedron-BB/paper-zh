@@ -39,7 +39,9 @@ export async function fetchAvailableModels(
 
       // 平滑回退：返回当前 Worker 免费层级验证完全可用的模型
       return [
-        { id: 'gemini-3.8-flash', name: 'gemini-3.8-flash (公共试用推荐 · 极速)' },
+        { id: 'gemini-3.5-flash-lite', name: 'gemini-3.5-flash-lite (极速稳定 · 负载低 · 强烈推荐)' },
+        { id: 'gemini-3.8-flash', name: 'gemini-3.8-flash (高智能旗舰版 · 高峰期易繁忙)' },
+        { id: 'gemini-3.5-flash', name: 'gemini-3.5-flash (平衡版)' },
       ]
     }
 

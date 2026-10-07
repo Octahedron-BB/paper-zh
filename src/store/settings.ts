@@ -16,7 +16,7 @@ const defaultSettings: Settings = {
   models: {
     deepseek: 'deepseek-chat',
     openai: 'gpt-4o-mini',
-    gemini: 'gemini-3.8-flash',
+    gemini: 'gemini-3.5-flash-lite',
     custom: '',
   },
   customBaseUrl: '',
