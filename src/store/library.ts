@@ -43,3 +43,45 @@ export async function getAllSavedPapers(): Promise<SavedPaper[]> {
     return []
   }
 }
+
+/**
+ * 伴读工作流断点缓存数据结构
+ */
+export interface PipelineCheckpoint {
+  doc_id: string
+  updatedAt: string
+  translations: Record<string, string>
+  scripts: Record<string, string>
+  ttsResults?: Record<string, {
+    audioBlob?: Blob
+    audioBase64?: string
+    durationSec: number
+    timestamps: any[]
+    scriptText: string
+  }>
+}
+
+const CHECKPOINT_PREFIX = 'paper_pipeline_ckpt_'
+
+export async function savePipelineCheckpoint(ckpt: PipelineCheckpoint): Promise<void> {
+  try {
+    await set(`${CHECKPOINT_PREFIX}${ckpt.doc_id}`, ckpt)
+  } catch (e) {
+    console.warn('保存断点失败:', e)
+  }
+}
+
+export async function getPipelineCheckpoint(docId: string): Promise<PipelineCheckpoint | undefined> {
+  try {
+    return await get(`${CHECKPOINT_PREFIX}${docId}`)
+  } catch (e) {
+    return undefined
+  }
+}
+
+export async function clearPipelineCheckpoint(docId: string): Promise<void> {
+  try {
+    await del(`${CHECKPOINT_PREFIX}${docId}`)
+  } catch {}
+}
+

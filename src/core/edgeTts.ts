@@ -54,8 +54,9 @@ export async function synthesizeEdgeTts(
 
   const endpoint = proxyUrl && proxyUrl.trim() ? proxyUrl.trim() : '/api/edge-tts'
 
-  // 1. 优先调用后端/开发服务器或自定义 Edge-TTS 代理 (带重试保护)
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  // 1. 优先调用后端/开发服务器或自定义 Edge-TTS 代理 (带强化重试与指数退避)
+  let lastProxyError = ''
+  for (let attempt = 1; attempt <= 4; attempt++) {
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -78,20 +79,30 @@ export async function synthesizeEdgeTts(
             timestamps: data.timestamps || [],
           }
         }
+      } else {
+        const errText = await res.text().catch(() => '')
+        lastProxyError = `HTTP ${res.status}: ${errText || res.statusText}`
       }
-    } catch {
-      // 失败稍候重试
+    } catch (e: any) {
+      lastProxyError = e?.message || '网络连接超时或代理节点异常'
     }
-    if (attempt < 3) {
-      await new Promise((r) => setTimeout(r, 400 * attempt))
+    if (attempt < 4) {
+      // 指数退避：500ms, 1000ms, 1800ms
+      await new Promise((r) => setTimeout(r, 500 * Math.pow(1.6, attempt - 1)))
     }
   }
 
-  // 2. 直接 WebSocket 降级尝试
+  // 2. 如果配置了外置代理端点（如 Cloudflare Worker / http(s) 开头），代理全部重试失败后直接抛出代理详细错误，不再触发浏览器原生直连
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    throw new Error(`Edge-TTS 反代节点请求失败 (${lastProxyError || '重试 4 次后仍未返回音频'})`)
+  }
+
+  // 3. 本地环境直接 WebSocket 降级尝试 (在原生开发环境下使用)
   const connectionId = generateUuid()
   const requestId = generateUuid()
   const token = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
   const url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${token}&ConnectionId=${connectionId}`
+
 
   return new Promise((resolve, reject) => {
     let ws: WebSocket

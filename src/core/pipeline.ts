@@ -7,7 +7,13 @@ import { TRANSLATE_SYSTEM, SCRIPT_SYSTEM } from './prompts'
 import { synthesizeEdgeTts } from './edgeTts'
 import { synthesizeSiliconFlowTts } from './siliconflowTts'
 import { generateReaderHtml } from './readerBuilder'
-import { savePaperToLibrary } from '../store/library'
+import {
+  savePaperToLibrary,
+  savePipelineCheckpoint,
+  getPipelineCheckpoint,
+  clearPipelineCheckpoint,
+  type PipelineCheckpoint,
+} from '../store/library'
 
 export type ProgressCallback = (progress: PipelineProgress) => void
 
@@ -171,10 +177,15 @@ function alignSentencesWithTimestamps(
   return result
 }
 
+export interface PipelineOptions {
+  resume?: boolean
+}
+
 export async function runDocumentPipeline(
   doc: Document,
   settings: Settings,
-  onProgress: ProgressCallback
+  onProgress: ProgressCallback,
+  options: PipelineOptions = { resume: true }
 ): Promise<string> {
   const logs: string[] = []
   function emit(stage: PipelineProgress['stage'], current: number, total: number, message: string) {
@@ -198,94 +209,162 @@ export async function runDocumentPipeline(
     const abbrevs = extractDocAbbreviations(doc)
     emit('terms', 1, 1, `缩写扫描完成: 捕获到 ${abbrevs.length} 个首字母缩写定义`)
 
-    // 构建 LLM 客户端
-    const llm = new LlmClient(settings)
-    const translations: Record<string, string> = {}
-    const scripts: Record<string, string> = {}
+    // 读取已存在的断点数据（若支持断点续跑）
+    let ckpt: PipelineCheckpoint | undefined
+    if (options.resume !== false) {
+      ckpt = await getPipelineCheckpoint(doc.doc_id)
+    }
+
+    const translations: Record<string, string> = { ...(ckpt?.translations || {}) }
+    const scripts: Record<string, string> = { ...(ckpt?.scripts || {}) }
+
+    interface SegTtsResult {
+      audioBlob?: Blob
+      durationSec: number
+      timestamps: any[]
+      scriptText: string
+    }
+    const ttsResultsMap: Record<string, SegTtsResult> = { ...(ckpt?.ttsResults || {}) }
 
     const totalSegs = doc.segments.length
 
+    const isValidZh = (zh?: string) => !!(zh && zh.trim() && !zh.startsWith('[翻译失败:'))
+    const isValidScript = (s?: string) => !!(s && s.trim() && !s.startsWith('[翻译失败:') && !s.startsWith('[改写失败:'))
+    const isValidAudio = (r?: SegTtsResult) => !!(r && r.audioBlob && r.audioBlob.size > 0 && r.durationSec >= 0)
+
+    // 构建 LLM 客户端
+    const llm = new LlmClient(settings)
+
     // 3. 忠实翻译 (Track A) - 4 线程并发加速
-    emit('translate', 0, totalSegs, '开始执行高精度学术双语忠实翻译 (4 线程并发加速)...')
-    let completedTrans = 0
-    await runConcurrent(doc.segments, 4, async (seg) => {
-      const terms = matchGlossaryTerms(seg.src_text)
-      const hints = renderPromptBlock(terms)
+    const segsNeedingTrans = doc.segments.filter((s) => !isValidZh(translations[s.sid]))
+    const initialTransDone = totalSegs - segsNeedingTrans.length
 
-      const systemPrompt = TRANSLATE_SYSTEM + (hints ? `\n\n【本段专业术语规范】\n${hints}` : '')
-      const userPrompt = `【待译段落 (章节: ${seg.sec_heading})】:\n${seg.src_text}`
-
-      try {
-        const rawZh = await llm.chat(
-          [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          0.3
-        )
-
-        // 应用硬替换规则
-        const finalZh = applyHardReplace(terms, rawZh)
-        translations[seg.sid] = finalZh
-      } catch (err: any) {
-        emit('translate', completedTrans, totalSegs, `段落 ${seg.sid} 翻译遇阻: ${err.message}`)
-        translations[seg.sid] = `[翻译失败: ${err.message}]`
-      } finally {
-        completedTrans++
-        emit('translate', completedTrans, totalSegs, `翻译完成 (${completedTrans}/${totalSegs}): ${seg.sec_heading}`)
+    if (segsNeedingTrans.length === 0) {
+      emit('translate', totalSegs, totalSegs, `已从断点恢复全部 ${totalSegs} 段中文忠实译文 (跳过 LLM 翻译)`)
+    } else {
+      if (initialTransDone > 0) {
+        emit('translate', initialTransDone, totalSegs, `从断点恢复 ${initialTransDone}/${totalSegs} 段译文，继续翻译剩余 ${segsNeedingTrans.length} 段...`)
+      } else {
+        emit('translate', 0, totalSegs, '开始执行高精度学术双语忠实翻译 (4 线程并发加速)...')
       }
-    })
+
+      let completedTrans = initialTransDone
+      await runConcurrent(segsNeedingTrans, 4, async (seg) => {
+        const terms = matchGlossaryTerms(seg.src_text)
+        const hints = renderPromptBlock(terms)
+
+        const systemPrompt = TRANSLATE_SYSTEM + (hints ? `\n\n【本段专业术语规范】\n${hints}` : '')
+        const userPrompt = `【待译段落 (章节: ${seg.sec_heading})】:\n${seg.src_text}`
+
+        try {
+          const rawZh = await llm.chat(
+            [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            0.3
+          )
+
+          // 应用硬替换规则
+          const finalZh = applyHardReplace(terms, rawZh)
+          translations[seg.sid] = finalZh
+        } catch (err: any) {
+          emit('translate', completedTrans, totalSegs, `段落 ${seg.sid} 翻译遇阻: ${err.message}`)
+          translations[seg.sid] = `[翻译失败: ${err.message}]`
+        } finally {
+          completedTrans++
+          emit('translate', completedTrans, totalSegs, `翻译完成 (${completedTrans}/${totalSegs}): ${seg.sec_heading}`)
+        }
+      })
+
+      // 持久化翻译断点
+      await savePipelineCheckpoint({
+        doc_id: doc.doc_id,
+        updatedAt: new Date().toISOString(),
+        translations,
+        scripts,
+        ttsResults: ttsResultsMap,
+      })
+    }
 
     // 4. 口语化伴读讲稿生成 (Track B: script-v3) - 4 线程并发加速
-    emit('script', 0, totalSegs, '开始生成自然听感口语伴读讲稿 (4 线程并发加速)...')
-    let completedScript = 0
-    await runConcurrent(doc.segments, 4, async (seg, i) => {
-      const zh = translations[seg.sid] || ''
+    const segsNeedingScript = doc.segments.filter((s) => !isValidScript(scripts[s.sid]))
+    const initialScriptDone = totalSegs - segsNeedingScript.length
 
-      const userPrompt = `【章节】${seg.sec_heading}\n【段落序号】${i + 1}/${totalSegs}\n【中文初译】\n${zh}\n\n【英文原文参考】\n${seg.src_text}`
-
-      try {
-        const rawScript = await llm.chat(
-          [
-            { role: 'system', content: SCRIPT_SYSTEM },
-            { role: 'user', content: userPrompt },
-          ],
-          0.4
-        )
-
-        // 应用多音字发音清洗
-        const cleanScript = cleanForTts(rawScript)
-        scripts[seg.sid] = cleanScript
-      } catch (err: any) {
-        emit('script', completedScript, totalSegs, `段落 ${seg.sid} 讲稿改写遇阻: ${err.message}`)
-        scripts[seg.sid] = zh // fallback
-      } finally {
-        completedScript++
-        emit('script', completedScript, totalSegs, `改写完成 (${completedScript}/${totalSegs}): ${seg.sec_heading}`)
+    if (segsNeedingScript.length === 0) {
+      emit('script', totalSegs, totalSegs, `已从断点恢复全部 ${totalSegs} 段口语伴读讲稿 (跳过 LLM 改写)`)
+    } else {
+      if (initialScriptDone > 0) {
+        emit('script', initialScriptDone, totalSegs, `从断点恢复 ${initialScriptDone}/${totalSegs} 段讲稿，继续改写剩余 ${segsNeedingScript.length} 段...`)
+      } else {
+        emit('script', 0, totalSegs, '开始生成自然听感口语伴读讲稿 (4 线程并发加速)...')
       }
-    })
 
-    // 5. 语音合成 (TTS) - 3 线程并发加速与容错对齐
+      let completedScript = initialScriptDone
+      await runConcurrent(segsNeedingScript, 4, async (seg) => {
+        const segIdx = doc.segments.findIndex((s) => s.sid === seg.sid)
+        const zh = translations[seg.sid] || ''
+
+        const userPrompt = `【章节】${seg.sec_heading}\n【段落序号】${segIdx + 1}/${totalSegs}\n【中文初译】\n${zh}\n\n【英文原文参考】\n${seg.src_text}`
+
+        try {
+          const rawScript = await llm.chat(
+            [
+              { role: 'system', content: SCRIPT_SYSTEM },
+              { role: 'user', content: userPrompt },
+            ],
+            0.4
+          )
+
+          // 应用多音字发音清洗
+          const cleanScript = cleanForTts(rawScript)
+          scripts[seg.sid] = cleanScript
+        } catch (err: any) {
+          emit('script', completedScript, totalSegs, `段落 ${seg.sid} 讲稿改写遇阻: ${err.message}`)
+          scripts[seg.sid] = zh // fallback
+        } finally {
+          completedScript++
+          emit('script', completedScript, totalSegs, `改写完成 (${completedScript}/${totalSegs}): ${seg.sec_heading}`)
+        }
+      })
+
+      // 持久化讲稿断点
+      await savePipelineCheckpoint({
+        doc_id: doc.doc_id,
+        updatedAt: new Date().toISOString(),
+        translations,
+        scripts,
+        ttsResults: ttsResultsMap,
+      })
+    }
+
+    // 5. 语音合成 (TTS) - 2 线程稳健并发加速与容错对齐
     const timeline: any[] = []
     const audioBlobs: Blob[] = []
     let combinedAudioBase64 = ''
 
-    if (settings.enableTts && settings.ttsProvider === 'edge-tts') {
-      emit('audio', 0, totalSegs, '正在调用 Edge-TTS 生成沉浸式全篇朗读与时间戳 (3 线程并发加速)...')
+    if (settings.enableTts && (settings.ttsProvider === 'edge-tts' || settings.ttsProvider === 'siliconflow')) {
+      const segsNeedingAudio = doc.segments.filter((s) => {
+        const scriptText = (scripts[s.sid] || translations[s.sid] || '').trim()
+        if (!scriptText) return false
+        return !isValidAudio(ttsResultsMap[s.sid])
+      })
+      const initialAudioDone = totalSegs - segsNeedingAudio.length
 
-      interface SegTtsResult {
-        audioBlob?: Blob
-        durationSec: number
-        timestamps: any[]
-        scriptText: string
+      if (initialAudioDone > 0) {
+        emit('audio', initialAudioDone, totalSegs, `从断点恢复 ${initialAudioDone}/${totalSegs} 段音频，继续合成剩余 ${segsNeedingAudio.length} 段 (2 线程稳健并发)...`)
+      } else {
+        emit('audio', 0, totalSegs, '正在调用语音合成生成沉浸式全篇朗读与时间戳 (2 线程稳健并发)...')
       }
-      const ttsResults: (SegTtsResult | null)[] = new Array(totalSegs).fill(null)
-      let completedAudio = 0
 
-      await runConcurrent(doc.segments, 3, async (seg, i) => {
+      let completedAudio = initialAudioDone
+      let checkpointSaveCounter = 0
+
+      // 采用 2 线程稳健并发，有效避免并发激增被微软/反代服务流控限制
+      await runConcurrent(segsNeedingAudio, 2, async (seg) => {
         const scriptText = scripts[seg.sid] || translations[seg.sid] || ''
         if (!scriptText.trim()) {
-          ttsResults[i] = { durationSec: 0, timestamps: [], scriptText: '' }
+          ttsResultsMap[seg.sid] = { durationSec: 0, timestamps: [], scriptText: '' }
           completedAudio++
           emit('audio', completedAudio, totalSegs, `跳过空白段 (${completedAudio}/${totalSegs})`)
           return
@@ -311,36 +390,57 @@ export async function runDocumentPipeline(
               )
             }
             if (res && res.audioBlob && res.audioBlob.size > 0) break
-          } catch (e) {
+          } catch (e: any) {
             if (attempt === 3) {
-              emit('audio', completedAudio, totalSegs, `段落 ${seg.sid} 重试 3 次后受限: ${e}`)
+              emit('audio', completedAudio, totalSegs, `段落 ${seg.sid} 重试 3 次后受限: ${e?.message || e}`)
             }
-            await new Promise((r) => setTimeout(r, 500 * attempt))
+            await new Promise((r) => setTimeout(r, 600 * attempt))
           }
         }
 
         let trueAudioDur = 0
         if (res?.audioBlob && res.audioBlob.size > 0) {
           trueAudioDur = await getAudioBlobDuration(res.audioBlob)
-        }
-
-        ttsResults[i] = {
-          audioBlob: res?.audioBlob,
-          durationSec: trueAudioDur > 0 ? trueAudioDur : (res?.durationSec || 0),
-          timestamps: res?.timestamps || [],
-          scriptText,
+          ttsResultsMap[seg.sid] = {
+            audioBlob: res.audioBlob,
+            durationSec: trueAudioDur > 0 ? trueAudioDur : (res.durationSec || 0),
+            timestamps: res.timestamps || [],
+            scriptText,
+          }
         }
 
         completedAudio++
         emit('audio', completedAudio, totalSegs, `语音合成 (${completedAudio}/${totalSegs}): ${seg.sec_heading}`)
+
+        checkpointSaveCounter++
+        if (checkpointSaveCounter % 3 === 0 || completedAudio === totalSegs) {
+          savePipelineCheckpoint({
+            doc_id: doc.doc_id,
+            updatedAt: new Date().toISOString(),
+            translations,
+            scripts,
+            ttsResults: ttsResultsMap,
+          }).catch(() => {})
+        }
+      })
+
+      // 持久化当前所有音频断点
+      await savePipelineCheckpoint({
+        doc_id: doc.doc_id,
+        updatedAt: new Date().toISOString(),
+        translations,
+        scripts,
+        ttsResults: ttsResultsMap,
       })
 
       // 严格按段落顺序拼装音频流与时间戳（绝对杜绝段落缺失引起的级联错位）
       let cumulativeTimeSec = 0
+      let failedAudioCount = 0
+
       for (let i = 0; i < totalSegs; i++) {
         const seg = doc.segments[i]
-        const r = ttsResults[i]
-        const scriptText = r?.scriptText || ''
+        const r = ttsResultsMap[seg.sid]
+        const scriptText = r?.scriptText || scripts[seg.sid] || translations[seg.sid] || ''
         const hasValidAudio = !!(r?.audioBlob && r.audioBlob.size > 0)
 
         if (hasValidAudio && r && r.audioBlob) {
@@ -369,8 +469,11 @@ export async function runDocumentPipeline(
             sentences,
           })
         } else {
+          if (scriptText.trim()) {
+            failedAudioCount++
+          }
           // 该段语音合成失败或为空：
-          // 核心修复：严禁在音频时间轴上虚借时长！没有物理音频就占用 0 秒，避免后续段落与音频整体偏移错位！
+          // 严禁在音频时间轴上虚借时长！没有物理音频就占用 0 秒，避免后续段落与音频整体偏移错位！
           const rawSentences = splitTextIntoSentences(scriptText)
           timeline.push({
             sid: seg.sid,
@@ -383,6 +486,10 @@ export async function runDocumentPipeline(
             sentences: rawSentences.map((st) => ({ text: st, start_sec: cumulativeTimeSec, end_sec: cumulativeTimeSec })),
           })
         }
+      }
+
+      if (failedAudioCount > 0) {
+        emit('audio', totalSegs - failedAudioCount, totalSegs, `⚠️ 提示：有 ${failedAudioCount} 个段落音频合成遇阻，已保留断点数据。您可点击【断点重试补齐】仅对该 ${failedAudioCount} 段重新合成。`)
       }
 
       // 将所有分段 MP3 合并成单一连续音频
@@ -426,7 +533,23 @@ export async function runDocumentPipeline(
       hasAudio: !!combinedAudioBase64,
     })
 
-    emit('done', 1, 1, '🎉 伴读网页已成功生成并保存至本地书架！')
+    // 检查所有需要音频的段落是否都已成功合成
+    const isAllAudioDone =
+      !settings.enableTts ||
+      (settings.ttsProvider !== 'edge-tts' && settings.ttsProvider !== 'siliconflow') ||
+      doc.segments.every((s) => {
+        const text = (scripts[s.sid] || translations[s.sid] || '').trim()
+        if (!text) return true
+        return isValidAudio(ttsResultsMap[s.sid])
+      })
+
+    if (isAllAudioDone) {
+      await clearPipelineCheckpoint(doc.doc_id)
+      emit('done', 1, 1, '🎉 伴读网页已成功生成并保存至本地书架！')
+    } else {
+      emit('done', 1, 1, '🎉 伴读网页已生成并保存！(部分失败段落已保留断点，可随时再次点击【断点重试补齐】)')
+    }
+
     return html
   } catch (err: any) {
     emit('error', 0, 0, `流水线执行异常: ${err.message}`)
