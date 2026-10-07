@@ -54,6 +54,16 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
+function uint8ToBase64(uint8) {
+  let binary = ''
+  const chunkSize = 8192
+  for (let i = 0; i < uint8.length; i += chunkSize) {
+    const chunk = uint8.subarray(i, i + chunkSize)
+    binary += String.fromCharCode.apply(null, chunk)
+  }
+  return btoa(binary)
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
@@ -141,10 +151,14 @@ async function synthesizeEdgeTts(text, voice, rate) {
   }
 
   ws.accept()
+  try {
+    ws.binaryType = 'arraybuffer'
+  } catch {}
 
   return new Promise((resolve, reject) => {
     const audioChunks = []
     const timestamps = []
+    const pendingPromises = []
     let completed = false
 
     const timer = setTimeout(() => {
@@ -188,14 +202,62 @@ async function synthesizeEdgeTts(text, voice, rate) {
     ws.send(config)
     ws.send(ssmlMsg)
 
+    function extractAudioPayload(uint8) {
+      if (uint8 && uint8.length >= 2) {
+        const headerLen = (uint8[0] << 8) | uint8[1]
+        if (uint8.length >= 2 + headerLen) {
+          const body = uint8.slice(2 + headerLen)
+          if (body.length > 0) {
+            audioChunks.push(body)
+          }
+        }
+      }
+    }
+
+    async function finish() {
+      if (completed) return
+      completed = true
+      clearTimeout(timer)
+      try { ws.close() } catch {}
+
+      if (pendingPromises.length > 0) {
+        await Promise.all(pendingPromises)
+      }
+
+      const totalLen = audioChunks.reduce((acc, c) => acc + c.length, 0)
+      const merged = new Uint8Array(totalLen)
+      let offset = 0
+      for (const chunk of audioChunks) {
+        merged.set(chunk, offset)
+        offset += chunk.length
+      }
+
+      const base64 = uint8ToBase64(merged)
+
+      let durationSec = 0
+      if (timestamps.length > 0) {
+        const last = timestamps[timestamps.length - 1]
+        durationSec = last.offsetSec + last.durationSec
+      } else {
+        durationSec = Math.max(1, text.length * 0.28)
+      }
+
+      resolve({
+        audioBase64: base64,
+        durationSec,
+        timestamps,
+      })
+    }
+
     ws.addEventListener('message', (event) => {
-      if (typeof event.data === 'string') {
-        const str = event.data
-        if (str.includes('Path:audio.metadata')) {
-          const bodyIdx = str.indexOf('\r\n\r\n')
+      const data = event.data
+
+      if (typeof data === 'string') {
+        if (data.includes('Path:audio.metadata')) {
+          const bodyIdx = data.indexOf('\r\n\r\n')
           if (bodyIdx !== -1) {
             try {
-              const meta = JSON.parse(str.substring(bodyIdx + 4))
+              const meta = JSON.parse(data.substring(bodyIdx + 4))
               for (const m of meta?.Metadata || []) {
                 if (m.Type === 'WordBoundary') {
                   const offsetSec = (m.Data?.Offset || 0) / 10000000
@@ -206,51 +268,22 @@ async function synthesizeEdgeTts(text, voice, rate) {
               }
             } catch {}
           }
-        } else if (str.includes('Path:turn.end')) {
-          if (!completed) {
-            completed = true
-            clearTimeout(timer)
-            try { ws.close() } catch {}
-
-            const totalLen = audioChunks.reduce((acc, c) => acc + c.byteLength, 0)
-            const merged = new Uint8Array(totalLen)
-            let offset = 0
-            for (const chunk of audioChunks) {
-              merged.set(new Uint8Array(chunk), offset)
-              offset += chunk.byteLength
-            }
-
-            let binary = ''
-            const step = 8192
-            for (let i = 0; i < merged.length; i += step) {
-              binary += String.fromCharCode.apply(null, merged.subarray(i, i + step))
-            }
-            const base64 = btoa(binary)
-
-            let durationSec = 0
-            if (timestamps.length > 0) {
-              const last = timestamps[timestamps.length - 1]
-              durationSec = last.offsetSec + last.durationSec
-            } else {
-              durationSec = Math.max(1, text.length * 0.28)
-            }
-
-            resolve({
-              audioBase64: base64,
-              durationSec,
-              timestamps,
-            })
-          }
+        } else if (data.includes('Path:turn.end')) {
+          finish().catch(reject)
         }
-      } else if (event.data instanceof ArrayBuffer) {
-        const view = new DataView(event.data)
-        if (view.byteLength > 2) {
-          const headerLen = view.getUint16(0)
-          const audioOffset = headerLen + 2
-          if (view.byteLength > audioOffset) {
-            audioChunks.push(event.data.slice(audioOffset))
-          }
-        }
+        return
+      }
+
+      // 处理二进制音频帧（兼容 ArrayBuffer / Uint8Array / Blob）
+      if (data instanceof Uint8Array) {
+        extractAudioPayload(data)
+      } else if (data instanceof ArrayBuffer) {
+        extractAudioPayload(new Uint8Array(data))
+      } else if (typeof Blob !== 'undefined' && data instanceof Blob) {
+        const p = data.arrayBuffer().then((buf) => {
+          extractAudioPayload(new Uint8Array(buf))
+        })
+        pendingPromises.push(p)
       }
     })
 
@@ -258,36 +291,12 @@ async function synthesizeEdgeTts(text, voice, rate) {
       if (!completed) {
         completed = true
         clearTimeout(timer)
-        reject(new Error('WebSocket 连接或传输错误: ' + (err.message || String(err))))
+        reject(new Error('WebSocket 错误: ' + (err.message || String(err))))
       }
     })
 
     ws.addEventListener('close', () => {
-      if (!completed) {
-        completed = true
-        clearTimeout(timer)
-        if (audioChunks.length > 0) {
-          const totalLen = audioChunks.reduce((acc, c) => acc + c.byteLength, 0)
-          const merged = new Uint8Array(totalLen)
-          let offset = 0
-          for (const chunk of audioChunks) {
-            merged.set(new Uint8Array(chunk), offset)
-            offset += chunk.byteLength
-          }
-          let binary = ''
-          const step = 8192
-          for (let i = 0; i < merged.length; i += step) {
-            binary += String.fromCharCode.apply(null, merged.subarray(i, i + step))
-          }
-          resolve({
-            audioBase64: btoa(binary),
-            durationSec: Math.max(1, text.length * 0.28),
-            timestamps,
-          })
-        } else {
-          reject(new Error('WebSocket 意外断开且未收到音频数据'))
-        }
-      }
+      finish().catch(reject)
     })
   })
 }
