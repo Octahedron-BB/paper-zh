@@ -586,20 +586,18 @@ function handleClearStorage() {
             >
               <div class="flex items-center justify-between">
                 <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                  Edge-TTS 代理 URL (可选)
+                  Edge-TTS 代理 URL
                 </label>
-                <span class="text-[10px] text-slate-400">本地开发留空即可</span>
+                <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">✓ 内置反代已就绪</span>
               </div>
               <input
                 type="text"
                 v-model="settingsState.edgeTtsProxyUrl"
-                placeholder="留空默认本地 /api/edge-tts；静态网页可填反代如 https://xxx.workers.dev"
+                placeholder="https://edge-tts-proxy.ryoctahedron1998.workers.dev/api/edge-tts"
                 class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-xs"
               />
               <p class="text-[11px] text-slate-400 leading-relaxed">
-                💡 <b>运行环境说明</b>：<br />
-                • <b>本地开发</b>：终端运行 <code class="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200">npm run dev</code>，自带 Node.js 代理，开箱即用 100% 畅听正版晓臻；<br />
-                • <b>GitHub Pages 静态页</b>：受微软安全风控限制，浏览器无法直连；需配置中转代理（如免费 Cloudflare Worker）方可实时调用。
+                💡 <b>运行环境说明</b>：系统已默认内置专用安全反代服务，开箱即听正版微软晓臻。如需使用自己的私有反代节点，直接在上方填入即可自动覆盖。
               </p>
             </div>
           </div>

@@ -14,7 +14,7 @@ const defaultSettings: Settings = {
   ttsRate: '+0%',
   academicProxyUrl: '',
   academicProxyCookie: '',
-  edgeTtsProxyUrl: '',
+  edgeTtsProxyUrl: 'https://edge-tts-proxy.ryoctahedron1998.workers.dev/api/edge-tts',
   siliconflowApiKey: '',
   siliconflowModel: 'FunAudioLLM/CosyVoice2-0.5B',
   customTtsApiKey: '',
@@ -25,7 +25,11 @@ function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
-      return { ...defaultSettings, ...JSON.parse(raw) }
+      const parsed = JSON.parse(raw)
+      if (!parsed.edgeTtsProxyUrl) {
+        parsed.edgeTtsProxyUrl = defaultSettings.edgeTtsProxyUrl
+      }
+      return { ...defaultSettings, ...parsed }
     }
   } catch (e) {
     console.error('加载本地设置失败:', e)

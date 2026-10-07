@@ -48,10 +48,26 @@ function escapeXml(unsafe) {
   })
 }
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+// 允许调用该反代的白名单域名（防止他人盗刷你的 Worker）
+const ALLOWED_ORIGINS = [
+  'https://octahedron-bb.github.io',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://127.0.0.1:3000',
+]
+
+function getCorsHeaders(request) {
+  const origin = request.headers.get('Origin') || ''
+  const isAllowed =
+    ALLOWED_ORIGINS.some((allowed) => origin === allowed || origin.startsWith(allowed + '/')) || !origin
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? (origin || '*') : 'null',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  }
 }
 
 function uint8ToBase64(uint8) {
@@ -66,8 +82,23 @@ function uint8ToBase64(uint8) {
 
 export default {
   async fetch(request, env, ctx) {
+    const origin = request.headers.get('Origin') || ''
+    const corsHeaders = getCorsHeaders(request)
+
+    // 1. 跨域预检处理
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: CORS_HEADERS, status: 204 })
+      if (origin && !ALLOWED_ORIGINS.some((allowed) => origin === allowed || origin.startsWith(allowed + '/'))) {
+        return new Response(null, { status: 403, headers: corsHeaders })
+      }
+      return new Response(null, { headers: corsHeaders, status: 204 })
+    }
+
+    // 2. 校验 Origin 来源（防盗刷保护）
+    if (origin && !ALLOWED_ORIGINS.some((allowed) => origin === allowed || origin.startsWith(allowed + '/'))) {
+      return new Response(
+        JSON.stringify({ error: 'Forbidden: Unauthorized Origin (仅供 Octahedron 学术伴读调用)' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     const url = new URL(request.url)
@@ -76,12 +107,12 @@ export default {
       return new Response(
         JSON.stringify({
           status: 'ok',
-          service: 'paper-zh Edge-TTS Cloudflare Proxy',
+          service: 'paper-zh Edge-TTS Cloudflare Proxy (Security Protected)',
           endpoint: '/api/edge-tts',
           usage: 'POST /api/edge-tts with { text, voice, rate }',
         }),
         {
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
@@ -96,23 +127,34 @@ export default {
         if (!text) {
           return new Response(JSON.stringify({ error: 'text is required' }), {
             status: 400,
-            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           })
+        }
+
+        // 3. 防刷熔断：学术伴读单段通常 < 300 字，超过 500 字直接拦截
+        if (text.length > 500) {
+          return new Response(
+            JSON.stringify({ error: 'Text too long: 单次朗读不得超过 500 字（防盗刷保护）' }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            }
+          )
         }
 
         const result = await synthesizeEdgeTts(text, voice, rate)
         return new Response(JSON.stringify(result), {
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message || String(err) }), {
           status: 500,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
     }
 
-    return new Response('Not Found', { status: 404, headers: CORS_HEADERS })
+    return new Response('Not Found', { status: 404, headers: corsHeaders })
   },
 }
 
