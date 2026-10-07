@@ -293,7 +293,21 @@ export function synthesizeEdgeTtsNode(
 
 export function edgeTtsMiddleware() {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
-    if (req.url === '/api/edge-tts' && req.method === 'POST') {
+    // 跨域预检处理
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+      res.end()
+      return
+    }
+
+    if ((req.url === '/api/edge-tts' || req.url === '/' || req.url === '') && req.method === 'POST') {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+
       let bodyStr = ''
       req.on('data', (chunk) => {
         bodyStr += chunk
