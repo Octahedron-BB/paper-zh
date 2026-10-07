@@ -4,6 +4,7 @@ import { settingsState, saveSettings } from '../store/settings'
 import type { TtsProvider, LlmProvider, Settings } from '../core/types'
 import { synthesizeEdgeTts } from '../core/edgeTts'
 import { synthesizeSiliconFlowTts } from '../core/siliconflowTts'
+import { fetchAvailableModels, type FetchedModel } from '../core/modelFetcher'
 import {
   KeyRound,
   Sparkles,
@@ -14,6 +15,8 @@ import {
   ExternalLink,
   Check,
   AlertTriangle,
+  RefreshCw,
+  Loader2,
 } from 'lucide-vue-next'
 
 const emit = defineEmits<{
@@ -71,12 +74,36 @@ const modelPresets: Record<LlmProvider, string[]> = {
   ],
 }
 
-// 当前选择提供商的模型预设
-const currentPresets = computed(() => {
-  return modelPresets[draft.value.llmProvider] || []
+// 动态从服务商获取的模型列表缓存
+const fetchedModelsMap = ref<Record<LlmProvider, FetchedModel[]>>({
+  deepseek: [],
+  openai: [],
+  gemini: [],
+  custom: [],
 })
 
-// 模型选择器模式：如果是预设中的某一个，或是自定义输入
+const isFetchingModels = ref(false)
+const fetchModelError = ref<string | null>(null)
+const fetchModelSuccess = ref<string | null>(null)
+
+// 组合可用的模型列表：优先使用在线获取到的模型，否则使用内置静态推荐预设
+const combinedModelOptions = computed<Array<{ id: string; label: string }>>(() => {
+  const provider = draft.value.llmProvider
+  const online = fetchedModelsMap.value[provider] || []
+  if (online.length > 0) {
+    return online.map((m) => ({
+      id: m.id,
+      label: m.name || m.id,
+    }))
+  }
+  const presets = modelPresets[provider] || []
+  return presets.map((id) => ({
+    id,
+    label: `${id} ${id.includes('flash') || id.includes('mini') || id.includes('chat') ? '（推荐 · 极速高性价比）' : '（高推理能力）'}`,
+  }))
+})
+
+// 模型选择器模式：如果是预设/获取列表中某一个，或是自定义输入
 const isCustomModel = ref(false)
 
 // 当前服务商绑定的模型名称
@@ -91,11 +118,12 @@ const activeModelValue = computed({
   },
 })
 
-// 下拉选框的值（若不在预设中则显示 custom）
+// 下拉选框的值（若不在当前列表中则显示 custom）
 const selectModelChoice = computed({
   get: () => {
     const cur = activeModelValue.value
-    if (currentPresets.value.includes(cur)) {
+    const exists = combinedModelOptions.value.some((o) => o.id === cur)
+    if (exists) {
       return cur
     }
     return '__custom__'
@@ -111,25 +139,61 @@ const selectModelChoice = computed({
 })
 
 // 初始化时如果不在预设中，激活自定义输入框
-if (!currentPresets.value.includes(activeModelValue.value) && activeModelValue.value) {
+if (!combinedModelOptions.value.some((o) => o.id === activeModelValue.value) && activeModelValue.value) {
   isCustomModel.value = true
+}
+
+async function handleFetchOnlineModels() {
+  const provider = draft.value.llmProvider
+  const key = draft.value.apiKeys[provider] || ''
+  isFetchingModels.value = true
+  fetchModelError.value = null
+  fetchModelSuccess.value = null
+
+  try {
+    const models = await fetchAvailableModels(provider, key, {
+      customBaseUrl: draft.value.customBaseUrl,
+      geminiProxyUrl: draft.value.geminiProxyUrl,
+    })
+
+    if (!models || models.length === 0) {
+      throw new Error('未检索到可用模型')
+    }
+
+    fetchedModelsMap.value[provider] = models
+    fetchModelSuccess.value = `成功获取 ${models.length} 个可用模型！`
+    setTimeout(() => { fetchModelSuccess.value = null }, 3500)
+
+    // 如果当前选中的模型不在新拉取的列表中，默认选中拉取到的第一个模型
+    if (!models.some((m) => m.id === activeModelValue.value)) {
+      activeModelValue.value = models[0].id
+      isCustomModel.value = false
+    }
+  } catch (err: any) {
+    fetchModelError.value = err.message || '获取模型列表失败'
+  } finally {
+    isFetchingModels.value = false
+  }
 }
 
 function handleSelectProvider(provider: LlmProvider) {
   draft.value.llmProvider = provider
+  fetchModelError.value = null
+  fetchModelSuccess.value = null
   const curModel = draft.value.models?.[provider] || ''
-  const presets = modelPresets[provider] || []
-  if (curModel && !presets.includes(curModel)) {
+  const available = combinedModelOptions.value
+  if (curModel && !available.some((o) => o.id === curModel)) {
     isCustomModel.value = true
   } else {
     isCustomModel.value = false
-    if (!curModel && presets.length > 0) {
+    if (!curModel && available.length > 0) {
       if (!draft.value.models) draft.value.models = {} as any
-      draft.value.models[provider] = presets[0]
-      draft.value.model = presets[0]
+      draft.value.models[provider] = available[0].id
+      draft.value.model = available[0].id
     }
   }
 }
+
 
 const ttsProviders: Array<{
   id: TtsProvider
@@ -572,19 +636,44 @@ function handleClearStorage() {
             <p v-else class="text-[11px] text-slate-400 mt-1">每个厂商的密钥均独立保留，切换厂商不会相互覆盖；数据 100% 留存在浏览器本地。</p>
           </div>
 
-          <!-- Model Name (下拉常用预设 + 自定义输入组合) -->
+          <!-- Model Name (在线拉取 + 下拉常用预设 + 自定义输入组合) -->
           <div class="space-y-1.5">
             <div class="flex items-center justify-between">
-              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">
-                模型选择 (Model)
-              </label>
+              <div class="flex items-center gap-2">
+                <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                  模型选择 (Model)
+                </label>
+                <!-- 在线获取可用模型按钮 -->
+                <button
+                  type="button"
+                  @click="handleFetchOnlineModels"
+                  :disabled="isFetchingModels"
+                  class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition disabled:opacity-50 font-medium"
+                  :title="draft.llmProvider === 'gemini' && !draft.apiKeys.gemini ? '通过内置代理获取当前支持的 Gemini 模型' : '向官方验证 API Key 并拉取此 Key 有权调用的所有模型'"
+                >
+                  <Loader2 v-if="isFetchingModels" class="w-3 h-3 animate-spin" />
+                  <RefreshCw v-else class="w-3 h-3" />
+                  <span>{{ isFetchingModels ? '正在查询可用模型...' : '⚡ 获取模型列表' }}</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 @click="isCustomModel = !isCustomModel"
                 class="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
               >
-                {{ isCustomModel ? '返回常用推荐列表' : '✏️ 手动输入其他模型' }}
+                {{ isCustomModel ? '返回模型列表' : '✏️ 手动输入其他模型' }}
               </button>
+            </div>
+
+            <!-- 成功/失败提示 -->
+            <div v-if="fetchModelSuccess" class="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 bg-emerald-50/60 dark:bg-emerald-950/30 px-2.5 py-1 rounded-lg border border-emerald-200/50 dark:border-emerald-900/40">
+              <Check class="w-3.5 h-3.5" />
+              <span>{{ fetchModelSuccess }}已为您更新下拉列表。</span>
+            </div>
+            <div v-if="fetchModelError" class="text-[11px] text-rose-600 dark:text-rose-400 flex items-start gap-1 bg-rose-50/60 dark:bg-rose-950/30 px-2.5 py-1.5 rounded-lg border border-rose-200/50 dark:border-rose-900/40 leading-snug">
+              <AlertTriangle class="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{{ fetchModelError }}</span>
             </div>
 
             <!-- 下拉菜单 -->
@@ -593,8 +682,8 @@ function handleClearStorage() {
                 v-model="selectModelChoice"
                 class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
               >
-                <option v-for="m in currentPresets" :key="m" :value="m">
-                  {{ m }} {{ m.includes('flash') || m.includes('mini') || m.includes('chat') ? '（推荐 · 极速高性价比）' : '（高推理能力）' }}
+                <option v-for="m in combinedModelOptions" :key="m.id" :value="m.id">
+                  {{ m.label }}
                 </option>
                 <option value="__custom__">✏️ 自定义输入其他模型名称...</option>
               </select>

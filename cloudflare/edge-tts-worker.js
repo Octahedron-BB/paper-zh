@@ -116,6 +116,35 @@ export default {
       )
     }
 
+    // --- 查询公共 Gemini 可用模型列表 ---
+    if (request.method === 'GET' && url.pathname.endsWith('/api/gemini/models')) {
+      try {
+        const geminiApiKey = env?.GEMINI_API_KEY || ''
+        if (!geminiApiKey) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                message: 'Cloudflare Worker 尚未绑定 GEMINI_API_KEY 环境变量，请在 Cloudflare 仪表盘设置环境变量，或在网页设置中填入您自己的 API Key。',
+                type: 'server_error',
+              },
+            }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiApiKey}`)
+        const data = await resp.text()
+        return new Response(data, {
+          status: resp.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      } catch (err) {
+        return new Response(
+          JSON.stringify({ error: { message: err.message || String(err), type: 'proxy_error' } }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
     // --- Gemini LLM 免费试用安全代理 ---
     if (request.method === 'POST' && url.pathname.endsWith('/api/gemini')) {
       try {
