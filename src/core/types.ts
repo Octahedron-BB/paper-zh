@@ -99,7 +99,7 @@ export interface ReaderPayload {
   interleave_html?: string
 }
 
-export type PipelineStage = 'idle' | 'segment' | 'terms' | 'translate' | 'script' | 'audio' | 'pack' | 'done' | 'error'
+export type PipelineStage = 'idle' | 'segment' | 'terms' | 'translate' | 'script' | 'audio' | 'pack' | 'done' | 'error' | 'stopped'
 
 export interface PipelineProgress {
   stage: PipelineStage

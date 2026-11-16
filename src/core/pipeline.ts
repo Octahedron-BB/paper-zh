@@ -17,15 +17,25 @@ import {
 
 export type ProgressCallback = (progress: PipelineProgress) => void
 
+export class PipelineAbortedError extends Error {
+  constructor(message = '流水线已由用户手动停止') {
+    super(message)
+    this.name = 'PipelineAbortedError'
+  }
+}
+
 async function runConcurrent<T>(
   items: T[],
   limit: number,
-  task: (item: T, index: number) => Promise<void>
+  task: (item: T, index: number) => Promise<void>,
+  signal?: AbortSignal
 ): Promise<void> {
   let nextIdx = 0
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (nextIdx < items.length) {
+      if (signal?.aborted) break
       const idx = nextIdx++
+      if (signal?.aborted) break
       await task(items[idx], idx)
     }
   })
@@ -179,6 +189,7 @@ function alignSentencesWithTimestamps(
 
 export interface PipelineOptions {
   resume?: boolean
+  signal?: AbortSignal
 }
 
 export async function runDocumentPipeline(
@@ -249,6 +260,7 @@ export async function runDocumentPipeline(
       }
 
       let completedTrans = initialTransDone
+      let ckptSaveCount = 0
       await runConcurrent(segsNeedingTrans, 4, async (seg) => {
         const terms = matchGlossaryTerms(seg.src_text)
         const hints = renderPromptBlock(terms)
@@ -274,8 +286,18 @@ export async function runDocumentPipeline(
         } finally {
           completedTrans++
           emit('translate', completedTrans, totalSegs, `翻译完成 (${completedTrans}/${totalSegs}): ${seg.sec_heading}`)
+          ckptSaveCount++
+          if (ckptSaveCount % 4 === 0) {
+            savePipelineCheckpoint({
+              doc_id: doc.doc_id,
+              updatedAt: new Date().toISOString(),
+              translations,
+              scripts,
+              ttsResults: ttsResultsMap,
+            }).catch(() => {})
+          }
         }
-      })
+      }, options.signal)
 
       // 持久化翻译断点
       await savePipelineCheckpoint({
@@ -285,6 +307,10 @@ export async function runDocumentPipeline(
         scripts,
         ttsResults: ttsResultsMap,
       })
+
+      if (options.signal?.aborted) {
+        throw new PipelineAbortedError()
+      }
     }
 
     // 4. 口语化伴读讲稿生成 (Track B: script-v3) - 4 线程并发加速
@@ -301,6 +327,7 @@ export async function runDocumentPipeline(
       }
 
       let completedScript = initialScriptDone
+      let ckptSaveCount = 0
       await runConcurrent(segsNeedingScript, 4, async (seg) => {
         const segIdx = doc.segments.findIndex((s) => s.sid === seg.sid)
         const zh = translations[seg.sid] || ''
@@ -328,8 +355,18 @@ export async function runDocumentPipeline(
         } finally {
           completedScript++
           emit('script', completedScript, totalSegs, `改写完成 (${completedScript}/${totalSegs}): ${seg.sec_heading}`)
+          ckptSaveCount++
+          if (ckptSaveCount % 4 === 0) {
+            savePipelineCheckpoint({
+              doc_id: doc.doc_id,
+              updatedAt: new Date().toISOString(),
+              translations,
+              scripts,
+              ttsResults: ttsResultsMap,
+            }).catch(() => {})
+          }
         }
-      })
+      }, options.signal)
 
       // 持久化讲稿断点
       await savePipelineCheckpoint({
@@ -339,6 +376,10 @@ export async function runDocumentPipeline(
         scripts,
         ttsResults: ttsResultsMap,
       })
+
+      if (options.signal?.aborted) {
+        throw new PipelineAbortedError()
+      }
     }
 
     // 5. 语音合成 (TTS) - 2 线程稳健并发加速与容错对齐
@@ -416,7 +457,7 @@ export async function runDocumentPipeline(
         emit('audio', completedAudio, totalSegs, `语音合成 (${completedAudio}/${totalSegs}): ${seg.sec_heading}`)
 
         checkpointSaveCounter++
-        if (checkpointSaveCounter % 3 === 0 || completedAudio === totalSegs) {
+        if (checkpointSaveCounter % 2 === 0 || completedAudio === totalSegs) {
           savePipelineCheckpoint({
             doc_id: doc.doc_id,
             updatedAt: new Date().toISOString(),
@@ -425,7 +466,7 @@ export async function runDocumentPipeline(
             ttsResults: ttsResultsMap,
           }).catch(() => {})
         }
-      })
+      }, options.signal)
 
       // 持久化当前所有音频断点
       await savePipelineCheckpoint({
@@ -435,6 +476,10 @@ export async function runDocumentPipeline(
         scripts,
         ttsResults: ttsResultsMap,
       })
+
+      if (options.signal?.aborted) {
+        throw new PipelineAbortedError()
+      }
 
       // 严格按段落顺序拼装音频流与时间戳（绝对杜绝段落缺失引起的级联错位）
       let cumulativeTimeSec = 0
@@ -555,6 +600,10 @@ export async function runDocumentPipeline(
 
     return html
   } catch (err: any) {
+    if (err instanceof PipelineAbortedError || options.signal?.aborted) {
+      emit('stopped', 0, 0, '流水线已成功停止，当前制作进度已安全持久化到本地断点。')
+      return ''
+    }
     emit('error', 0, 0, `流水线执行异常: ${err.message}`)
     throw err
   }

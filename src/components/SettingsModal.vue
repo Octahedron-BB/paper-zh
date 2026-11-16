@@ -478,6 +478,46 @@ async function testVoicePlayback() {
   isTestingVoice.value = false
 }
 
+const isTestingProxy = ref(false)
+const proxyTestResult = ref<{ success: boolean; message: string; latency?: number } | null>(null)
+
+async function testEdgeTtsProxy() {
+  isTestingProxy.value = true
+  proxyTestResult.value = null
+  const startTime = Date.now()
+  try {
+    const proxyUrl = draft.value.edgeTtsProxyUrl?.trim() || undefined
+    const voice = draft.value.ttsVoice || 'zh-CN-XiaoxiaoNeural'
+    const result = await synthesizeEdgeTts('测试代理连通性', voice, '+0%', proxyUrl)
+    const latency = Date.now() - startTime
+    const sizeKb = (result.audioBlob.size / 1024).toFixed(1)
+    proxyTestResult.value = {
+      success: true,
+      message: `连通正常！耗时 ${latency}ms，成功合成音频 (${sizeKb} KB)`,
+      latency,
+    }
+    if (result.audioBlob.size > 0) {
+      stopVoicePlayback()
+      const url = URL.createObjectURL(result.audioBlob)
+      const audio = new Audio(url)
+      testAudioEl.value = audio
+      audio.onended = () => {
+        URL.revokeObjectURL(url)
+      }
+      audio.play().catch(() => {})
+    }
+  } catch (err: any) {
+    const latency = Date.now() - startTime
+    proxyTestResult.value = {
+      success: false,
+      message: `连接失败 (${latency}ms): ${err.message || '未知错误'}`,
+      latency,
+    }
+  } finally {
+    isTestingProxy.value = false
+  }
+}
+
 function stopVoicePlayback() {
   if (testAudioEl.value) {
     try {
@@ -873,22 +913,48 @@ function handleClearStorage() {
             <!-- Edge-TTS 代理配置（解决静态部署跨域拦截） -->
             <div
               v-if="draft.ttsProvider === 'edge-tts'"
-              class="pt-3 border-t border-slate-200/60 dark:border-slate-700/60 space-y-2"
+              class="pt-3 border-t border-slate-200/60 dark:border-slate-700/60 space-y-2.5"
             >
               <div class="flex items-center justify-between">
                 <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">
                   Edge-TTS 代理 URL
                 </label>
-                <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">✓ 内置反代已就绪</span>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    @click="testEdgeTtsProxy"
+                    :disabled="isTestingProxy"
+                    class="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 text-xs font-medium flex items-center gap-1 transition shadow-sm border border-blue-200/60 dark:border-blue-900/60"
+                  >
+                    <Loader2 v-if="isTestingProxy" class="w-3.5 h-3.5 animate-spin" />
+                    <RefreshCw v-else class="w-3.5 h-3.5" />
+                    <span>{{ isTestingProxy ? '测试中...' : '测试代理连通性' }}</span>
+                  </button>
+                  <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">✓ 内置反代已就绪</span>
+                </div>
               </div>
               <input
                 type="text"
                 v-model="draft.edgeTtsProxyUrl"
                 placeholder="https://edge-tts-proxy.ryoctahedron1998.workers.dev/api/edge-tts"
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-xs"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-xs focus:ring-2 focus:ring-blue-500 outline-none"
               />
+              <!-- 代理连通性测试结果提示条 -->
+              <div
+                v-if="proxyTestResult"
+                :class="[
+                  'p-2.5 rounded-xl text-xs flex items-center gap-2 animate-fade-in transition',
+                  proxyTestResult.success
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
+                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60'
+                ]"
+              >
+                <Check v-if="proxyTestResult.success" class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <AlertTriangle v-else class="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                <span class="flex-1">{{ proxyTestResult.message }}</span>
+              </div>
               <p class="text-[11px] text-slate-400 leading-relaxed">
-                💡 <b>运行环境说明</b>：系统已默认内置专用安全反代服务，开箱即听正版微软晓臻。如需使用自己的私有反代节点，直接在上方填入即可自动覆盖。
+                💡 <b>运行环境说明</b>：系统已默认内置专用安全反代服务，开箱即听正版微软晓臻。如需使用自己的私有反代节点，直接在上方填入并点击「测试代理连通性」验证。
               </p>
             </div>
           </div>

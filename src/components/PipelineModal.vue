@@ -23,6 +23,7 @@ import {
   RotateCcw,
   Trash2,
   RefreshCw,
+  Square,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -35,6 +36,8 @@ const emit = defineEmits<{
 }>()
 
 const isRunning = ref(false)
+const isStopping = ref(false)
+const abortController = ref<AbortController | null>(null)
 const trialMode = ref(false)
 const generatedHtml = ref('')
 const checkpoint = ref<PipelineCheckpoint | null>(null)
@@ -106,6 +109,13 @@ async function handleClearCheckpoint() {
   }
 }
 
+function stopPipeline() {
+  if (!isRunning.value || isStopping.value) return
+  isStopping.value = true
+  progress.value.message = '正在安全中止并保存当前进度到断点...'
+  abortController.value?.abort()
+}
+
 async function startPipeline(mode: 'resume' | 'fresh' = 'resume') {
   const provider = settingsState.llmProvider
   const activeKey = (settingsState.apiKeys?.[provider] || settingsState.apiKey || '').trim()
@@ -114,6 +124,8 @@ async function startPipeline(mode: 'resume' | 'fresh' = 'resume') {
     return
   }
 
+  abortController.value = new AbortController()
+  isStopping.value = false
   isRunning.value = true
   generatedHtml.value = ''
 
@@ -139,13 +151,17 @@ async function startPipeline(mode: 'resume' | 'fresh' = 'resume') {
       (p) => {
         progress.value = p
       },
-      { resume: mode === 'resume' }
+      { resume: mode === 'resume', signal: abortController.value.signal }
     )
-    generatedHtml.value = html
+    if (html) {
+      generatedHtml.value = html
+    }
   } catch (err: any) {
     console.error(err)
   } finally {
     isRunning.value = false
+    isStopping.value = false
+    abortController.value = null
     await loadCheckpoint()
   }
 }
@@ -334,6 +350,18 @@ function handleOpenReader() {
           </div>
         </div>
 
+        <!-- Stopped State -->
+        <div v-if="progress.stage === 'stopped'" class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 flex items-start gap-2 text-xs">
+          <AlertCircle class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div class="space-y-1">
+            <div class="font-semibold">流水线已安全暂停</div>
+            <div>{{ progress.message }}</div>
+            <div class="text-[11px] text-amber-700/90 dark:text-amber-300/80 pt-1">
+              已完成的段落已安全存入本地断点。随时点击下方<b>「继续生成」</b>即可无缝继续，无需从头开始。
+            </div>
+          </div>
+        </div>
+
         <!-- Error State -->
         <div v-if="progress.stage === 'error'" class="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 flex items-start gap-2 text-xs">
           <AlertCircle class="w-5 h-5 shrink-0 mt-0.5" />
@@ -407,13 +435,33 @@ function handleOpenReader() {
           </button>
 
           <!-- Running State -->
+          <div v-else-if="isRunning" class="flex items-center gap-2.5">
+            <button
+              type="button"
+              @click="stopPipeline"
+              :disabled="isStopping"
+              class="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 text-xs font-medium flex items-center gap-1.5 transition shadow-sm"
+              title="暂停生成并保存当前进度到断点"
+            >
+              <Loader2 v-if="isStopping" class="w-3.5 h-3.5 animate-spin" />
+              <Square v-else class="w-3.5 h-3.5 fill-current" />
+              <span>{{ isStopping ? '正在保存进度并停止...' : '停止并保存进度' }}</span>
+            </button>
+            <div class="px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900 text-xs font-medium flex items-center gap-1.5">
+              <Loader2 class="w-3.5 h-3.5 animate-spin" />
+              <span>生成中 ({{ progress.percent }}%)</span>
+            </div>
+          </div>
+
+          <!-- Stopped State Button: Continue with resume -->
           <button
-            v-else-if="isRunning"
-            disabled
-            class="px-6 py-2.5 rounded-xl bg-blue-400 text-white font-medium text-xs flex items-center gap-2 cursor-not-allowed"
+            v-else-if="progress.stage === 'stopped' && !isRunning"
+            type="button"
+            @click="() => startPipeline('resume')"
+            class="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-sm flex items-center gap-2 transition"
           >
-            <Loader2 class="w-4 h-4 animate-spin" />
-            流水线运行中...
+            <Play class="w-4 h-4 fill-current" />
+            <span>继续生成 (从断点补齐)</span>
           </button>
         </div>
       </div>
