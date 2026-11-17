@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - web
+      - main
     paths:
       - 'cloudflare/**'
   workflow_dispatch:
