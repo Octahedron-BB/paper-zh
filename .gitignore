@@ -22,6 +22,12 @@ session.txt
 *.sublime-workspace
 .vscode/*.log
 
+# Node.js 与 Web 构建产物
+node_modules/
+web/node_modules/
+dist/
+web/dist/
+
 # 3. Python 运行时与缓存
 __pycache__/
 *.py[cod]

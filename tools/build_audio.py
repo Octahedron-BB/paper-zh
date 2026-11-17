@@ -254,6 +254,7 @@ async def synthesize_segment(
     model: str = DEFAULT_SILICONFLOW_MODEL,
     api_key: str | None = None,
     poly_rules: Sequence[tuple[str, str]] | None = None,
+    proxy: str | None = None,
 ) -> dict[str, Any]:
     """合成单段音频并提取句子级时间边界（支持 edge-tts 与 siliconflow）"""
     norm_text = normalize_script_for_tts(raw_text, poly_rules=poly_rules)
@@ -288,7 +289,8 @@ async def synthesize_segment(
         exact_duration = get_mp3_duration(out_mp3)
         sentences = estimate_sentences_proportional(raw_text, exact_duration)
     else:
-        communicate = _edge_tts().Communicate(norm_text, voice, rate=rate, pitch=pitch)
+        proxy_val = proxy or os.environ.get("EDGE_TTS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+        communicate = _edge_tts().Communicate(norm_text, voice, rate=rate, pitch=pitch, proxy=proxy_val)
         audio_buf = bytearray()
         raw_sentences = []
 
@@ -338,6 +340,7 @@ async def run_audio_pipeline(
     api_key: str | None = None,
     limit: int | None = None,
     only: list[str] | None = None,
+    proxy: str | None = None,
 ) -> dict[str, Any]:
     load_env(ROOT / ".env")
     provider = (provider or os.environ.get("TTS_PROVIDER", "edge-tts")).strip().lower()
@@ -375,6 +378,8 @@ async def run_audio_pipeline(
 
     print("=" * 76)
     print(f"[音频合成] 文档={doc_id}  引擎={provider}  音色={voice}  语速={rate}  音调={pitch}")
+    if proxy or os.environ.get("EDGE_TTS_PROXY"):
+        print(f"[代理服务] {proxy or os.environ.get('EDGE_TTS_PROXY')}")
     print(f"[段落数量] 共 {len(items)} 段待处理")
 
     poly_rules = load_polyphone_rules(doc_id=doc_id)
@@ -404,6 +409,7 @@ async def run_audio_pipeline(
                 model=model or DEFAULT_SILICONFLOW_MODEL,
                 api_key=api_key,
                 poly_rules=poly_rules,
+                proxy=proxy,
             )
             return item_idx, sid, seg_info, meta, mp3_path
 
@@ -503,6 +509,51 @@ async def run_audio_pipeline(
     return ts_payload
 
 
+async def test_tts_connectivity(
+    provider: str = "edge-tts",
+    voice: str | None = None,
+    proxy: str | None = None,
+    api_key: str | None = None,
+) -> bool:
+    """测试 TTS 服务的连通性、握手与延迟。"""
+    load_env(ROOT / ".env")
+    provider = provider.strip().lower()
+    voice = voice or (DEFAULT_SILICONFLOW_VOICE if provider == "siliconflow" else DEFAULT_EDGE_VOICE)
+    test_text = "你好，这是学术伴读语音合成引擎连通性测试。"
+
+    print("=" * 76)
+    print(f"[*] 正在测试 {provider} 连通性 (音色: {voice})...")
+    start = time.perf_counter()
+
+    try:
+        if provider == "siliconflow":
+            key = api_key or os.environ.get("SILICONFLOW_API_KEY", "").strip()
+            data = await asyncio.to_thread(synthesize_siliconflow, test_text, voice, "+0%", api_key=key)
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            print(f"[✓] 硅基流动 CosyVoice 连通测试通过！耗时: {elapsed_ms:.1f}ms | 返回音频: {len(data)/1024:.1f} KB")
+            return True
+        else:
+            proxy_val = proxy or os.environ.get("EDGE_TTS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+            if proxy_val:
+                print(f"[*] 使用配置代理: {proxy_val}")
+            comm = _edge_tts().Communicate(test_text, voice, rate="+0%", pitch="+0Hz", proxy=proxy_val)
+            buf = bytearray()
+            async for chunk in comm.stream():
+                if chunk["type"] == "audio":
+                    buf.extend(chunk["data"])
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            if len(buf) > 0:
+                print(f"[✓] 微软 Edge-TTS (DRM v2) 握手与合成成功！耗时: {elapsed_ms:.1f}ms | 返回音频: {len(buf)/1024:.1f} KB")
+                return True
+            else:
+                print(f"[❌] Edge-TTS 握手未返回音频数据")
+                return False
+    except Exception as e:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        print(f"[❌] TTS 连通测试失败 ({elapsed_ms:.1f}ms): {e}")
+        return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="生成讲稿音频与双向定位时间戳")
     ap.add_argument("--doc-id", default=None,
@@ -512,12 +563,23 @@ def main() -> int:
     ap.add_argument("--voice", default=None, help="TTS 语音名称（默认根据 provider 选用最佳音色）")
     ap.add_argument("--model", default=None, help="硅基流动模型名称（默认 FunAudioLLM/CosyVoice2-0.5B）")
     ap.add_argument("--api-key", default=None, help="硅基流动 API Key（亦可配置在 .env）")
+    ap.add_argument("--proxy", default=None, help="TTS 代理 URL (或配置环境变量 EDGE_TTS_PROXY)")
+    ap.add_argument("--test", "--test-proxy", dest="test_proxy", action="store_true", help="测试 TTS 引擎连通性与延迟后退出")
     ap.add_argument("--rate", default="+0%", help="语速微调，如 +5%% / -5%%")
     ap.add_argument("--pitch", default="+0Hz", help="音调微调，如 +2Hz / -2Hz (主要用于 edge-tts)")
     ap.add_argument("--silence", type=int, default=300, help="段落间静音时长(ms)")
     ap.add_argument("--limit", type=int, default=None, help="只处理前 N 段（试水用）")
     ap.add_argument("--only", nargs="*", default=None, help="只处理指定 sid")
     args = ap.parse_args()
+
+    if args.test_proxy:
+        ok = asyncio.run(test_tts_connectivity(
+            provider=args.provider or os.environ.get("TTS_PROVIDER", "edge-tts"),
+            voice=args.voice,
+            proxy=args.proxy,
+            api_key=args.api_key,
+        ))
+        return 0 if ok else 1
 
     doc_id = resolve_doc_id(ROOT, args.doc_id, stage="script")
     asyncio.run(run_audio_pipeline(
@@ -531,6 +593,7 @@ def main() -> int:
         api_key=args.api_key,
         limit=args.limit,
         only=args.only,
+        proxy=args.proxy,
     ))
     return 0
 

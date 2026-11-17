@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -141,13 +142,54 @@ def resolve_field(doc_id: str, cli_field: str | None) -> str | None:
     return cli_field if cli_field is not None else saved
 
 
+CHECKPOINT_DIR = ROOT / "data" / "checkpoints"
+
+
+def save_checkpoint(doc_id: str, translations: dict | None = None, scripts: dict | None = None) -> Path:
+    """持久化保存流水线进度断点。"""
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    ckpt_path = CHECKPOINT_DIR / f"{doc_id}.json"
+    data = {}
+    if ckpt_path.exists():
+        try:
+            data = json.loads(ckpt_path.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    if translations:
+        data["translations"] = translations
+    if scripts:
+        data["scripts"] = scripts
+    ckpt_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return ckpt_path
+
+
+def load_checkpoint(doc_id: str) -> dict:
+    """加载流水线进度断点。"""
+    ckpt_path = CHECKPOINT_DIR / f"{doc_id}.json"
+    if ckpt_path.exists():
+        try:
+            return json.loads(ckpt_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
 def process_single_doc(doc_path: Path, doc_type: str, args: argparse.Namespace) -> int:
-    """处理单篇文档的全流程（支持 HTML 与 PDF）。"""
+    """处理单篇文档的全流程（支持 HTML 与 PDF，支持断点中断与续跑）。"""
     doc_id = args.doc_id or doc_path.stem
     field = resolve_field(doc_id, args.field)
 
     print("=" * 76)
     print(f"[文档] {doc_path.name}  doc_id={doc_id}  格式={doc_type.upper()}  field={field or '(无)'}")
+
+    # 0. 自动预提炼术语 (如果指定 --extract-terms)
+    if getattr(args, "extract_terms", False):
+        print(f"\n--- 步骤 0：LLM 智能术语预挖掘与提炼 ---")
+        try:
+            from tools.extract_terms import extract_and_generate_glossary
+            extract_and_generate_glossary(doc_id, use_llm=True, deep=True)
+        except Exception as e:
+            print(f"[!] 术语自动提炼遇到提示: {e}，将继续后续流水线")
 
     # 1. 分段阶段
     if doc_type == "html":
@@ -164,81 +206,103 @@ def process_single_doc(doc_path: Path, doc_type: str, args: argparse.Namespace) 
         return 0
 
     terms = load_glossary_dir(ROOT, doc_id=doc_id, field=field)
-    print(f"[术语] 生效 {len(terms)} 条（主表 + glossary-d/{doc_id}.yaml）")
+    print(f"[术语] 生效 {len(terms)} 条（主表 + glossary-d/{doc_id}.yaml，就近优先）")
 
     provider = build_provider(args.provider, args.model)
     cache = Cache(ROOT / "data" / "cache")
     translated: dict = {}
 
-    # 2. 轨A 翻译阶段
-    if args.stage in ("translate", "all") and not args.stage in ("script", "interleave", "audio", "reader"):
-        print(f"\n--- 轨A：忠实翻译（并发 {args.workers}）---")
-        results, stats = run_translate(doc, terms, provider, cache,
-                                       workers=args.workers, only=args.only,
-                                       limit=args.limit)
-        print(f"[轨A] {stats.line()}")
-        for sid, err in stats.failed[:5]:
-            print(f"      ❌ {sid}: {err}")
-        jp, mp = save_translation(doc, results, provider, ROOT / "data" / "translation")
-        print(f"[轨A] 产物: {jp.relative_to(ROOT)}  |  {mp.relative_to(ROOT)}")
-        problems = hard_replace_audit(doc, terms, results)
-        if problems:
-            print(f"[硬替换体检] {len(problems)} 条需要复核：")
-            for p in problems[:5]:
-                print("   " + p)
-        translated = results
+    ckpt = load_checkpoint(doc_id) if getattr(args, "resume", False) else {}
+    if ckpt:
+        print(f"[断点] 成功读取本地制作断点数据 (包含 {len(ckpt.get('translations', {}))} 段译文)")
 
-    # 3. 轨B 口语讲稿阶段
-    if args.stage in ("script", "all") and not args.stage in ("interleave", "audio", "reader"):
-        if not translated:
-            p = ROOT / "data" / "translation" / f"{doc_id}.json"
-            if not p.exists():
-                print(f"[错误] 找不到轨A 产物: {p}，请先运行 --stage translate")
-                return 1
-            data = json.loads(p.read_text(encoding="utf-8"))
-            translated = {sid: {"text": v.get("zh_raw") or v.get("zh") or v.get("translation", ""),
-                               "text_raw": v.get("zh_raw") or v.get("zh") or v.get("translation", "")}
-                          for sid, v in data["segments"].items()}
-        print(f"\n--- 轨B：口语讲稿（并发 {args.workers}）---")
-        from src.rewrite import run_rewrite, save_script
-        sresults, sstats = run_rewrite(doc, translated, terms, provider, cache,
-                                       workers=args.workers, limit=args.limit)
-        print(f"[轨B] {sstats.line()}")
-        for sid, err in sstats.failed[:5]:
-            print(f"      ❌ {sid}: {err}")
-        jp, mp = save_script(doc, sresults, provider, ROOT / "data" / "script")
-        print(f"[轨B] 产物: {jp.relative_to(ROOT)}  |  {mp.relative_to(ROOT)}")
+    try:
+        # 2. 轨A 翻译阶段
+        if args.stage in ("translate", "all") and not args.stage in ("script", "interleave", "audio", "reader"):
+            print(f"\n--- 轨A：忠实翻译（并发 {args.workers}）---")
+            if getattr(args, "resume", False) and ckpt.get("translations"):
+                translated = ckpt.get("translations", {})
+                print(f"[断点恢复] 已从断点恢复 {len(translated)} 段译文")
 
-    # 4. 中英对照阶段
-    if args.stage in ("interleave", "all") and not args.stage in ("audio", "reader"):
-        print(f"\n--- 中英交错对照生成 ---")
-        run_build_interleave(doc_id)
+            results, stats = run_translate(doc, terms, provider, cache,
+                                           workers=args.workers, only=args.only,
+                                           limit=args.limit)
+            print(f"[轨A] {stats.line()}")
+            for sid, err in stats.failed[:5]:
+                print(f"      ❌ {sid}: {err}")
+            jp, mp = save_translation(doc, results, provider, ROOT / "data" / "translation")
+            print(f"[轨A] 产物: {jp.relative_to(ROOT)}  |  {mp.relative_to(ROOT)}")
+            problems = hard_replace_audit(doc, terms, results)
+            if problems:
+                print(f"[硬替换体检] {len(problems)} 条需要复核：")
+                for p in problems[:5]:
+                    print("   " + p)
+            translated = results
+            save_checkpoint(doc_id, translations=translated)
 
-    # 5. 音频合成阶段 (TTS + 时间戳)
-    if (args.stage in ("audio", "all") or args.stage == "reader") and not args.no_audio:
-        tts_provider = args.tts_provider or os.environ.get("TTS_PROVIDER", "edge-tts")
-        print(f"\n--- 语音合成流水线 ({tts_provider}) ---")
-        asyncio.run(run_audio_pipeline(
-            doc_id=doc_id,
-            voice=args.voice,
-            rate=args.rate,
-            pitch=args.pitch,
-            silence_ms=args.silence_ms,
-            provider=args.tts_provider,
-            model=args.tts_model,
-            limit=args.limit,
-            only=args.only,
-        ))
+        # 3. 轨B 口语讲稿阶段
+        if args.stage in ("script", "all") and not args.stage in ("interleave", "audio", "reader"):
+            if not translated:
+                p = ROOT / "data" / "translation" / f"{doc_id}.json"
+                if not p.exists():
+                    print(f"[错误] 找不到轨A 产物: {p}，请先运行 --stage translate")
+                    return 1
+                data = json.loads(p.read_text(encoding="utf-8"))
+                translated = {sid: {"text": v.get("zh_raw") or v.get("zh") or v.get("translation", ""),
+                                   "text_raw": v.get("zh_raw") or v.get("zh") or v.get("translation", "")}
+                              for sid, v in data["segments"].items()}
+            print(f"\n--- 轨B：口语讲稿（并发 {args.workers}）---")
+            from src.rewrite import run_rewrite, save_script
+            sresults, sstats = run_rewrite(doc, translated, terms, provider, cache,
+                                           workers=args.workers, limit=args.limit)
+            print(f"[轨B] {sstats.line()}")
+            for sid, err in sstats.failed[:5]:
+                print(f"      ❌ {sid}: {err}")
+            jp, mp = save_script(doc, sresults, provider, ROOT / "data" / "script")
+            print(f"[轨B] 产物: {jp.relative_to(ROOT)}  |  {mp.relative_to(ROOT)}")
+            save_checkpoint(doc_id, translations=translated, scripts=sresults)
 
-    # 6. 自包含 Web Reader 打包阶段
-    if args.stage in ("reader", "all") and not args.no_audio:
-        print(f"\n--- 自包含 Web Reader 打包 ---")
-        reader_file = build_reader(doc_id=doc_id, embed_audio=not args.no_embed)
-        print(f"\n🎉 [全流程完成] 文档 {doc_id} 已就绪！")
-        print(f"📄 伴读网页: {reader_file}")
+        # 4. 中英对照阶段
+        if args.stage in ("interleave", "all") and not args.stage in ("audio", "reader"):
+            print(f"\n--- 中英交错对照生成 ---")
+            run_build_interleave(doc_id)
 
-    print(f"\n[缓存统计] {cache.stats()}")
-    return 0
+        # 5. 音频合成阶段 (TTS + 时间戳)
+        if (args.stage in ("audio", "all") or args.stage == "reader") and not args.no_audio:
+            tts_provider = args.tts_provider or os.environ.get("TTS_PROVIDER", "edge-tts")
+            print(f"\n--- 语音合成流水线 ({tts_provider}) ---")
+            asyncio.run(run_audio_pipeline(
+                doc_id=doc_id,
+                voice=args.voice,
+                rate=args.rate,
+                pitch=args.pitch,
+                silence_ms=args.silence_ms,
+                provider=args.tts_provider,
+                model=args.tts_model,
+                limit=args.limit,
+                only=args.only,
+                proxy=getattr(args, "proxy", None),
+            ))
+
+        # 6. 自包含 Web Reader 打包阶段
+        if args.stage in ("reader", "all") and not args.no_audio:
+            print(f"\n--- 自包含 Web Reader 打包 ---")
+            reader_file = build_reader(doc_id=doc_id, embed_audio=not args.no_embed)
+            print(f"\n🎉 [全流程完成] 文档 {doc_id} 已就绪！")
+            print(f"📄 伴读网页: {reader_file}")
+
+        print(f"\n[缓存统计] {cache.stats()}")
+        return 0
+
+    except KeyboardInterrupt:
+        save_checkpoint(doc_id, translations=translated)
+        print("\n" + "!" * 76)
+        print(f"[!] 收到用户中断信号 (Ctrl+C)，流水线已安全暂停。")
+        print(f"[✓] 当前制作进度已完整保存至本地断点: {CHECKPOINT_DIR / f'{doc_id}.json'}")
+        print(f"💡 随时运行以下命令即可从断点无缝继续，无需从头重算：")
+        print(f"   python tools/run_pipeline.py --doc-id {doc_id} --resume")
+        print("!" * 76 + "\n")
+        return 130
 
 
 def main() -> int:
@@ -258,10 +322,13 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=None, help="只处理前 N 段（试水用）")
     ap.add_argument("--only", nargs="*", default=None, help="只处理特定段落或章节")
     ap.add_argument("--force-segment", action="store_true", help="强制重新分段")
+    ap.add_argument("--resume", action="store_true", help="从本地断点继续生成（跳过已完成段落）")
+    ap.add_argument("--extract-terms", action="store_true", help="在流水线执行前自动运行 LLM 深度术语挖掘并注入分术语表")
 
     # 语音与播放器选项
     ap.add_argument("--tts-provider", choices=["edge-tts", "siliconflow"], default=None,
                     help="TTS 引擎: edge-tts (默认) 或 siliconflow (硅基流动)")
+    ap.add_argument("--proxy", default=None, help="TTS 代理服务器 URL (或配置环境变量 EDGE_TTS_PROXY)")
     ap.add_argument("--tts-model", default=None, help="硅基流动模型名称（默认 FunAudioLLM/CosyVoice2-0.5B）")
     ap.add_argument("--voice", default=None, help=f"TTS 音色（默认根据 provider 选用最佳音色，如 edge-tts 为 {DEFAULT_VOICE}）")
     ap.add_argument("--rate", default="+0%", help="TTS 语速微调（如 +10%%）")

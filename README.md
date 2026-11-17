@@ -91,21 +91,30 @@ DEEPSEEK_API_KEY=sk-your-api-key-here
 python tools/fetch_paper.py s41572-026-00741-7
 #    - 手工保存：在期刊官网网页按 Ctrl+S / 右键“另存为”，保存至 papers/s41572-026-00741-7.html
 
-# 2) 一键自动挖掘专业术语缩写（生成 glossary-d/ 专属初稿）：
-python tools/extract_terms.py s41572-026-00741-7
+# 2) 一键自动挖掘专业术语缩写（支持 --deep 大模型深度提炼）：
+python tools/extract_terms.py s41572-026-00741-7 --deep
 
-# 3) 全流程端到端执行（分段 -> 双轨翻译 -> 讲稿口语化 -> 语音合成 -> Web Reader 打包）：
+# 3) 全流程端到端执行（支持 Ctrl+C 安全暂存，随时加 --resume 续跑）：
 python tools/run_pipeline.py s41572-026-00741-7
 ```
 
 #### 方式 B：PDF 模式（通用保底）
 ```bash
 # 1) 将文献 PDF 放置在 papers/ 目录下（如 papers/vieta2018.pdf）
-# 2) 全流程端到端执行：
-python tools/run_pipeline.py --pdf vieta2018
+# 2) 全流程端到端执行（支持 --resume 断点续跑）：
+python tools/run_pipeline.py --pdf vieta2018 --resume
 
 # 3) 批量自动处理 papers/ 下的所有 PDF 文献：
 python tools/run_pipeline.py --all
+```
+
+#### 方式 C：纯静态单页应用 Web 版（浏览器开箱即用）
+```bash
+# 进入 web 前端目录运行本地热重载开发服务器：
+cd web
+npm install
+npm run dev
+# 访问 http://localhost:5173 即可使用可视化文献库、专业术语表、断点恢复与伴读播放器！
 ```
 
 #### 常用参数速查：
