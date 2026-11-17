@@ -9,6 +9,8 @@ import {
   clearPipelineCheckpoint,
   type PipelineCheckpoint,
 } from '../store/library'
+import { getDocTerms } from '../store/glossaryStore'
+import ExtractTermsModal from './ExtractTermsModal.vue'
 import {
   FileText,
   Play,
@@ -24,6 +26,8 @@ import {
   Trash2,
   RefreshCw,
   Square,
+  BookMarked,
+  Sparkles,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -41,6 +45,15 @@ const abortController = ref<AbortController | null>(null)
 const trialMode = ref(false)
 const generatedHtml = ref('')
 const checkpoint = ref<PipelineCheckpoint | null>(null)
+const docTermsCount = ref(0)
+const showExtractModal = ref(false)
+
+async function refreshDocTermsCount() {
+  try {
+    const terms = await getDocTerms(props.document.doc_id)
+    docTermsCount.value = terms.length
+  } catch {}
+}
 
 const progress = ref<PipelineProgress>({
   stage: 'idle',
@@ -96,10 +109,12 @@ async function loadCheckpoint() {
 
 onMounted(() => {
   loadCheckpoint()
+  refreshDocTermsCount()
 })
 
 watch(() => props.document.doc_id, () => {
   loadCheckpoint()
+  refreshDocTermsCount()
 })
 
 async function handleClearCheckpoint() {
@@ -264,6 +279,24 @@ function handleOpenReader() {
                 生成 Edge-TTS 语音
               </span>
             </label>
+          </div>
+
+          <!-- Terminology helper bar -->
+          <div class="flex items-center justify-between p-3 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 text-xs">
+            <div class="flex items-center gap-2 text-indigo-900 dark:text-indigo-200">
+              <BookMarked class="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <span>
+                术语库：本文已配置 <strong class="text-indigo-700 dark:text-indigo-300 font-bold">{{ docTermsCount }}</strong> 条专属规范 (就近优先生效)
+              </span>
+            </div>
+            <button
+              type="button"
+              @click="showExtractModal = true"
+              class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 font-medium text-[11px] flex items-center gap-1 transition shadow-xs"
+            >
+              <Sparkles class="w-3 h-3 text-indigo-500" />
+              <span>AI 提炼本文术语</span>
+            </button>
           </div>
         </div>
 
@@ -466,5 +499,15 @@ function handleOpenReader() {
         </div>
       </div>
     </div>
+
+    <!-- Extract Terms Modal -->
+    <ExtractTermsModal
+      v-if="showExtractModal"
+      :initialDocId="props.document.doc_id"
+      :initialDocTitle="props.document.title"
+      :initialDoc="props.document"
+      @close="showExtractModal = false"
+      @imported="() => { refreshDocTermsCount(); showExtractModal = false; }"
+    />
   </div>
 </template>

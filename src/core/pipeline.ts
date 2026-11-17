@@ -2,6 +2,7 @@ import type { Document, PipelineProgress, Settings } from './types'
 import { LlmClient } from './llm'
 import { extractDocAbbreviations } from './abbrev'
 import { matchGlossaryTerms, renderPromptBlock, applyHardReplace } from './glossary'
+import { getMergedGlossary } from '../store/glossaryStore'
 import { cleanForTts } from './polyphone'
 import { TRANSLATE_SYSTEM, SCRIPT_SYSTEM, getScriptUserPrompt } from './prompts'
 import { synthesizeEdgeTts } from './edgeTts'
@@ -246,6 +247,12 @@ export async function runDocumentPipeline(
     // 构建 LLM 客户端
     const llm = new LlmClient(settings)
 
+    // 装载当前文献与全局合并术语库（就近优先：doc > global）
+    const activeGlossary = await getMergedGlossary(doc.doc_id)
+    if (activeGlossary.length > 0) {
+      emit('terms', activeGlossary.length, totalSegs, `已装载术语库 (共 ${activeGlossary.length} 条规范术语，就近优先生效)`)
+    }
+
     // 3. 忠实翻译 (Track A) - 4 线程并发加速
     const segsNeedingTrans = doc.segments.filter((s) => !isValidZh(translations[s.sid]))
     const initialTransDone = totalSegs - segsNeedingTrans.length
@@ -262,7 +269,7 @@ export async function runDocumentPipeline(
       let completedTrans = initialTransDone
       let ckptSaveCount = 0
       await runConcurrent(segsNeedingTrans, 4, async (seg) => {
-        const terms = matchGlossaryTerms(seg.src_text)
+        const terms = matchGlossaryTerms(seg.src_text, activeGlossary)
         const hints = renderPromptBlock(terms)
 
         const systemPrompt = TRANSLATE_SYSTEM + (hints ? `\n\n【本段专业术语规范】\n${hints}` : '')
@@ -331,7 +338,7 @@ export async function runDocumentPipeline(
       await runConcurrent(segsNeedingScript, 4, async (seg) => {
         const segIdx = doc.segments.findIndex((s) => s.sid === seg.sid)
         const zh = translations[seg.sid] || ''
-        const terms = matchGlossaryTerms(seg.src_text)
+        const terms = matchGlossaryTerms(seg.src_text, activeGlossary)
         const hints = renderPromptBlock(terms)
 
         const sectionHeading = seg.is_figure && seg.fig_label ? `${seg.sec_heading} (${seg.fig_label})` : seg.sec_heading

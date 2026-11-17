@@ -4,13 +4,14 @@ import type { Document } from './core/types'
 import { segmentHtml } from './core/segmentHtml'
 import FeedView from './views/FeedView.vue'
 import LibraryView from './views/LibraryView.vue'
+import GlossaryView from './views/GlossaryView.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import PipelineModal from './components/PipelineModal.vue'
 import ReaderViewModal from './views/ReaderViewModal.vue'
 import { getPaperFromLibrary } from './store/library'
-import { BookOpen, Settings as SettingsIcon, Newspaper, Library, ShieldCheck } from 'lucide-vue-next'
+import { BookOpen, Settings as SettingsIcon, Newspaper, Library, ShieldCheck, BookMarked } from 'lucide-vue-next'
 
-const currentTab = ref<'feed' | 'library'>('feed')
+const currentTab = ref<'feed' | 'library' | 'glossary'>('feed')
 const showSettings = ref(false)
 
 const activePipelineDoc = ref<Document | null>(null)
@@ -121,6 +122,18 @@ onMounted(() => {
             <Library class="w-3.5 h-3.5" />
             <span>本地书架</span>
           </button>
+          <button
+            @click="currentTab = 'glossary'"
+            :class="[
+              'px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 sm:gap-1.5 transition whitespace-nowrap',
+              currentTab === 'glossary'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            ]"
+          >
+            <BookMarked class="w-3.5 h-3.5" />
+            <span>专业术语表</span>
+          </button>
         </nav>
 
         <!-- Setting Button -->
@@ -150,6 +163,9 @@ onMounted(() => {
         ref="libraryViewRef"
         @open-reader="handleOpenReader"
         @go-feed="currentTab = 'feed'"
+      />
+      <GlossaryView
+        v-else-if="currentTab === 'glossary'"
       />
     </main>
 
