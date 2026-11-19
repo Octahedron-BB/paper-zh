@@ -203,9 +203,9 @@ function handleOpenReader() {
           <div class="p-2 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
             <FileText class="w-5 h-5" />
           </div>
-          <div>
+          <div class="min-w-0">
             <h2 class="text-base font-bold text-slate-900 dark:text-slate-100">制作伴读工作流</h2>
-            <p class="text-xs text-slate-500 font-mono">{{ props.document.doc_id }}</p>
+            <p class="text-xs text-slate-500 font-mono truncate max-w-[180px] sm:max-w-md" :title="props.document.doc_id">{{ props.document.doc_id }}</p>
           </div>
         </div>
         <button

@@ -422,7 +422,7 @@ async function handleConfirmImport() {
         </div>
 
         <!-- 候选列表表头与批量操作 -->
-        <div class="flex items-center justify-between text-xs px-1">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs px-1">
           <label class="flex items-center gap-2 cursor-pointer font-medium text-slate-700 dark:text-slate-300">
             <input
               type="checkbox"

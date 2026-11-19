@@ -63,7 +63,7 @@ defineExpose({
 
 <template>
   <div class="space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
       <div>
         <h2 class="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
           本地伴读书架 (Local Library)
@@ -73,7 +73,7 @@ defineExpose({
         </p>
       </div>
 
-      <span class="text-xs text-slate-400 font-mono">
+      <span class="text-xs text-slate-400 font-mono shrink-0">
         共 {{ papers.length }} 篇已生成
       </span>
     </div>
@@ -100,22 +100,22 @@ defineExpose({
     </div>
 
     <!-- Library Grid -->
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
       <div
         v-for="paper in papers"
         :key="paper.doc_id"
-        class="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-900/60 shadow-sm transition space-y-3 flex flex-col justify-between"
+        class="p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-900/60 shadow-sm transition space-y-3 flex flex-col justify-between min-w-0 overflow-hidden"
       >
-        <div class="space-y-2">
-          <div class="flex items-center justify-between text-xs text-slate-400">
-            <span class="font-mono text-[11px]">{{ paper.doc_id }}</span>
-            <span class="flex items-center gap-1 text-[11px]">
+        <div class="space-y-2 min-w-0">
+          <div class="flex items-center justify-between gap-2 text-xs text-slate-400 min-w-0">
+            <span class="font-mono text-[11px] truncate flex-1 min-w-0" :title="paper.doc_id">{{ paper.doc_id }}</span>
+            <span class="flex items-center gap-1 text-[11px] shrink-0">
               <Calendar class="w-3 h-3" />
               {{ new Date(paper.createdAt).toLocaleDateString() }}
             </span>
           </div>
 
-          <h3 class="font-bold text-slate-900 dark:text-slate-100 text-sm leading-snug line-clamp-2">
+          <h3 class="font-bold text-slate-900 dark:text-slate-100 text-sm leading-snug line-clamp-2 break-words">
             {{ paper.title }}
           </h3>
 
@@ -141,7 +141,7 @@ defineExpose({
         </div>
 
         <!-- Actions -->
-        <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap">
           <button
             @click="handleDelete(paper.doc_id, paper.title)"
             class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition"
