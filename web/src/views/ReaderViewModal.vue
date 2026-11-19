@@ -105,22 +105,24 @@ function handleDownload() {
         <span class="truncate text-slate-400">{{ props.title || props.docId || '伴读网页' }}</span>
       </div>
 
-      <div class="flex items-center gap-2 shrink-0">
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <button
           @click="openInNewTab"
-          class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1.5 transition"
+          class="px-2 sm:px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 sm:gap-1.5 transition"
           title="在新标签页中打开完整网页"
         >
           <ExternalLink class="w-3.5 h-3.5" />
-          <span>新标签页打开</span>
+          <span class="hidden sm:inline">新标签页打开</span>
+          <span class="sm:hidden">新标签</span>
         </button>
         <button
           @click="handleDownload"
-          class="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 transition"
+          class="px-2 sm:px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1 sm:gap-1.5 transition"
           title="下载离线 HTML 文件"
         >
           <Download class="w-3.5 h-3.5" />
-          <span>下载 HTML</span>
+          <span class="hidden sm:inline">下载 HTML</span>
+          <span class="sm:hidden">下载</span>
         </button>
         <button
           @click="handleClose"

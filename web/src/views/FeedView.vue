@@ -358,11 +358,11 @@ function handleActionForFeedItem(item: FeedItem) {
       <div
         v-for="item in filteredItems"
         :key="item.doi || item.doc_id"
-        class="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-900/60 hover:shadow-lg hover:shadow-slate-100 dark:hover:shadow-none transition-all space-y-3"
+        class="p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-900/60 hover:shadow-lg hover:shadow-slate-100 dark:hover:shadow-none transition-all space-y-3 min-w-0 overflow-hidden"
       >
         <!-- Card Top Meta -->
         <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <span class="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-semibold text-[11px]">
               {{ item.journal }}
             </span>
@@ -372,30 +372,30 @@ function handleActionForFeedItem(item: FeedItem) {
             <span class="text-slate-400">{{ item.pub_date }}</span>
           </div>
 
-          <div class="flex items-center gap-2">
-            <span v-if="savedDocIds.has(item.doc_id)" class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium flex items-center gap-1">
+          <div class="flex items-center gap-2 min-w-0 max-w-full">
+            <span v-if="savedDocIds.has(item.doc_id)" class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium flex items-center gap-1 shrink-0">
               <CheckCircle2 class="w-3 h-3" />
               已生成伴读
             </span>
-            <span class="font-mono text-[11px] text-slate-400">ID: {{ item.doc_id }}</span>
+            <span class="font-mono text-[11px] text-slate-400 truncate max-w-[120px] sm:max-w-none" :title="item.doc_id">ID: {{ item.doc_id }}</span>
           </div>
         </div>
 
         <!-- Titles: Chinese first if displayLang === 'zh', otherwise English first -->
-        <div>
+        <div class="break-words">
           <template v-if="displayLang === 'zh'">
-            <h3 class="text-base font-bold text-slate-900 dark:text-slate-100 leading-snug">
+            <h3 class="text-base font-bold text-slate-900 dark:text-slate-100 leading-snug break-words">
               {{ item.title_zh || item.title_en }}
             </h3>
-            <p v-if="item.title_en" class="text-xs text-slate-500 font-serif mt-1">
+            <p v-if="item.title_en" class="text-xs text-slate-500 font-serif mt-1 break-words">
               {{ item.title_en }}
             </p>
           </template>
           <template v-else>
-            <h3 class="text-base font-bold text-slate-900 dark:text-slate-100 leading-snug font-serif">
+            <h3 class="text-base font-bold text-slate-900 dark:text-slate-100 leading-snug font-serif break-words">
               {{ item.title_en }}
             </h3>
-            <p v-if="item.title_zh && item.title_zh !== item.title_en" class="text-xs text-slate-500 mt-1">
+            <p v-if="item.title_zh && item.title_zh !== item.title_en" class="text-xs text-slate-500 mt-1 break-words">
               {{ item.title_zh }}
             </p>
           </template>

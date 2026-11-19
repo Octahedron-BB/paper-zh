@@ -413,13 +413,13 @@ async function handleLlmImported(target: 'global' | string, count: number) {
             <BookMarked class="w-5 h-5" />
           </div>
           <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <h2 class="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 flex flex-wrap items-center gap-2">
               <span>专业学术术语库</span>
               <span class="text-xs px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-100 dark:border-indigo-900">
                 双层就近优先 · 跨篇复利
               </span>
             </h2>
-            <p class="text-xs text-slate-500">
+            <p class="text-xs text-slate-500 break-words">
               规范化跨文献翻译与播客改写 · 译后 0 Token 精确替换 · 支持大模型智能深度提炼
             </p>
           </div>
@@ -691,17 +691,17 @@ async function handleLlmImported(target: 'global' | string, count: number) {
         <div
           v-for="t in filteredTerms"
           :key="t.term"
-          class="p-4 md:px-5 md:py-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition flex flex-col md:grid md:grid-cols-12 md:items-center gap-2 md:gap-3 text-xs"
+          class="p-4 md:px-5 md:py-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition flex flex-col md:grid md:grid-cols-12 md:items-center gap-2 md:gap-3 text-xs min-w-0"
         >
           <!-- 1. 英文原词 -->
-          <div class="md:col-span-3 flex items-center justify-between md:justify-start gap-2">
-            <span class="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm">
+          <div class="md:col-span-3 flex items-center justify-between md:justify-start gap-2 min-w-0">
+            <span class="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm break-all">
               {{ t.term }}
             </span>
             <!-- Mobile mode badge -->
             <span
               :class="[
-                'md:hidden px-2 py-0.5 rounded-full text-[10px] font-semibold',
+                'md:hidden px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0',
                 t.mode === 'hard_replace'
                   ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
                   : 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800'
@@ -712,9 +712,9 @@ async function handleLlmImported(target: 'global' | string, count: number) {
           </div>
 
           <!-- 2. 中文译名 -->
-          <div class="md:col-span-3 flex items-center gap-1.5 font-medium text-slate-900 dark:text-slate-100">
-            <span class="text-slate-400 md:hidden">译名:</span>
-            <span class="font-semibold text-indigo-600 dark:text-indigo-400 text-sm">
+          <div class="md:col-span-3 flex items-center gap-1.5 font-medium text-slate-900 dark:text-slate-100 min-w-0">
+            <span class="text-slate-400 md:hidden shrink-0">译名:</span>
+            <span class="font-semibold text-indigo-600 dark:text-indigo-400 text-sm break-words">
               {{ t.zh }}
             </span>
           </div>
